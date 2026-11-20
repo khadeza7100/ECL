@@ -1,4 +1,5 @@
 import flet as ft
+from database import get_discounting_factor
 
 def get_proxy_data_model_form(page: ft.Page):
     # Read-only Text field helper
@@ -20,8 +21,14 @@ def get_proxy_data_model_form(page: ft.Page):
     ccod = create_read_only_field("20%, Table 12 of Basel III Guideline of BB")
     bglc = create_read_only_field("Use Average Forced Loan Creation Rate")
     historical_pd = create_read_only_field("Transition rate of loans from stage to stage")
-    suggestive_pd = create_read_only_field("Use MLR (PD, EVs)")
-    discounting_factor = create_read_only_field("Use COF")
+    suggestive_pd = create_read_only_field("Multiple Linear Regression (MLR) [PD, EVs]")
+    stored_discounting_factor = get_discounting_factor()
+    discounting_factor_value = (
+        f"{stored_discounting_factor:.4f}"
+        if stored_discounting_factor is not None
+        else "0.0000"
+    )
+    discounting_factor = create_read_only_field(discounting_factor_value)
     economic_variables = create_read_only_field("Use data from BB website")
 
     # Disabled Save Button
@@ -60,9 +67,9 @@ def get_proxy_data_model_form(page: ft.Page):
                 build_row("Credit Conversion Factor CCOD", ccod),
                 build_row("Credit Conversion Factor BGLC", bglc),
                 build_row("Historical PD", historical_pd),
-                build_row("Suggestive PD", suggestive_pd),
+                build_row("Adjusted PD (APD)", suggestive_pd),
                 build_row("Discounting Factor", discounting_factor),
-                build_row("Economic Variables", economic_variables),
+                build_row("Economic Variables (EV)", economic_variables),
                 ft.Container(height=10),
                 ft.Row([save_btn], alignment="end")
             ],

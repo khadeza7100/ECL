@@ -135,6 +135,7 @@ def init_db():
                 valuation_date VARCHAR(30),
                 market_value DECIMAL(15, 2) DEFAULT 0.00,
                 fsv DECIMAL(15, 2) DEFAULT 0.00,
+                lgd DECIMAL(15, 4) DEFAULT 0.0000,
                 collateral_quality VARCHAR(50),
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_cust_num (customer_number)
@@ -283,6 +284,8 @@ def init_db():
         col_existing_cols = [col[0] for col in cursor.fetchall()]
         if "fsv" not in col_existing_cols:
             cursor.execute("ALTER TABLE collateral_profiles ADD COLUMN fsv DECIMAL(15, 2) DEFAULT 0.00 AFTER market_value")
+        if "lgd" not in col_existing_cols:
+            cursor.execute("ALTER TABLE collateral_profiles ADD COLUMN lgd DECIMAL(15, 4) DEFAULT 0.0000 AFTER fsv")
 
         cursor.execute("SHOW COLUMNS FROM funded_ac_profiles")
         funded_existing_cols = [col[0] for col in cursor.fetchall()]
@@ -826,6 +829,7 @@ def save_collateral_profile(data_dict):
                     valuation_date = %(valuation_date)s,
                     market_value = %(market_value)s,
                     fsv = %(fsv)s,
+                    lgd = %(lgd)s,
                     collateral_quality = %(collateral_quality)s
                 WHERE id = %(id)s
             '''
@@ -833,11 +837,11 @@ def save_collateral_profile(data_dict):
             query = '''
                 INSERT INTO collateral_profiles (
                     customer_number, customer_name, security_type, quantity,
-                    measurement_unit, valuation_date, market_value, fsv,
+                    measurement_unit, valuation_date, market_value, fsv, lgd,
                     collateral_quality
                 ) VALUES (
                     %(customer_number)s, %(customer_name)s, %(security_type)s, %(quantity)s,
-                    %(measurement_unit)s, %(valuation_date)s, %(market_value)s, %(fsv)s,
+                    %(measurement_unit)s, %(valuation_date)s, %(market_value)s, %(fsv)s, %(lgd)s,
                     %(collateral_quality)s
                 )
             '''

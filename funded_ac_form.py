@@ -9,14 +9,24 @@ from database import (
     get_all_credit_conversion_factors
 )
 from components.custom_datepicker import CustomDatePicker
+from components.facility_types import FUNDED_FACILITY_TYPES
 
-def get_ccod_ccf_rate() -> float:
-    """Fetches the CCOD facility conversion rate from CCF table."""
+def get_average_credit_conversion_rate(facility_type: str) -> float:
+    """Returns the average credit conversion rate for a facility type."""
+    requested_type = str(facility_type or "").strip().lower()
     ccf_records = get_all_credit_conversion_factors() or []
-    for record in ccf_records:
-        if str(record.get("facility_type", "")).upper() == "CCOD":
-            return float(record.get("cc_rate", 0.0))
-    return 0.0
+    matching_rates = [
+        float(record.get("cc_rate", 0.0))
+        for record in ccf_records
+        if str(record.get("facility_type", "")).strip().lower() == requested_type
+    ]
+    if not matching_rates and requested_type in ("continuous", "continuous loan"):
+        matching_rates = [
+            float(record.get("cc_rate", 0.0))
+            for record in ccf_records
+            if str(record.get("facility_type", "")).strip().lower() == "ccod"
+        ]
+    return sum(matching_rates) / len(matching_rates) if matching_rates else 0.0
 
 def get_last_month_end_date() -> date:
     today = date.today()
@@ -25,6 +35,13 @@ def get_last_month_end_date() -> date:
 
 def get_funded_ac_profile_form(page: ft.Page):
     input_fields = {}
+    term_loan_only_fields = {
+        "Due Installment (Months)",
+        "Installment Size",
+        "Amount Recovered",
+        "Installment Recovered",
+        "Overdue Installment",
+    }
 
     base_field_style = {
         "height": 45,
@@ -44,15 +61,8 @@ def get_funded_ac_profile_form(page: ft.Page):
     fn_reporting_date_str = last_month_end.strftime("%d/%m/%Y")
 
     dropdown_options = {
-        "Nature of Loan": ["Demand", "Continuous", "Term", "Credit Card"],
+        "Nature of Loan": list(FUNDED_FACILITY_TYPES),
         "Last Approval Type": ["New", "Renewal", "Enhancement", "RSDL", "Restructure"],
-        "ECL Category": [
-            "Staff", "Consumer", "HBL", "SOD", "Credit Card", "Garments & Textile", 
-            "Food", "Jute", "NGO", "Govt", "NBFI", "Agri", "Shipping", "Chemical", 
-            "Pharma", "Cement & Ceramics", "Engineering", "Fuel & Power", "ICT", 
-            "Paper & Printing", "Real Estate", "Tannery", "Hotel", "Contractor", 
-            "Brick Field", "Other"
-        ],
         "SICR/Impairment": ["None", "SICR", "Impairment"]
     }
 
@@ -60,12 +70,21 @@ def get_funded_ac_profile_form(page: ft.Page):
         "Reporting Date", "Customer Number", "Customer Name",
         "Account Number", "Nature of Loan", "Last Approval Type",
         "Approval Date", "Loan Limit", "Loan Outstanding",
-        "Accrued Interest", "Calculated Interest", "Expiry Date",
+        "Accrued Interest", "Calculated Interest", "Available Limit", "Expiry Date",
         "1st Installment Due", "Due Installment (Months)", "Installment Size",
         "Amount Recovered", "Installment Recovered", "Overdue Installment",
-        "Overdue Period in Days", "Overdue Amount", "ECL Category", "EAD",
-        "Staging by DPD", "SICR/Impairment", "QJ Stage", "SICR/Impairment Reason"
+        "Overdue Period in Days", "Overdue Amount", "Credit Conversion Factor (CCF)", "EAD",
+        "Staging by DPD", "SICR/Impairment", "QJ Stage", "Final Stage",
+        "SICR/Impairment Reason"
     ]
+
+    def display_facility_type(value):
+        stored_value = str(value or "").strip()
+        return {
+            "demand": "Demand Loan",
+            "continuous": "Continuous Loan",
+            "term": "Term Loan",
+        }.get(stored_value.lower(), stored_value)
 
     # Handle Customer Name Autofill
     def autofill_customer_name(e=None):
@@ -103,6 +122,13 @@ def get_funded_ac_profile_form(page: ft.Page):
             page.overlay.append(ft.SnackBar(content=ft.Text(f"Warning: Account {ac_num} exists in Non-Funded A/C Profiles!"), bgcolor="#ff9800", open=True))
         page.update()
 
+    def update_final_stage():
+        stage_ranks = {"Stage-1": 1, "Stage-2": 2, "Stage-3": 3}
+        qj_stage = str(input_fields["QJ Stage"].value or "").strip()
+        dpd_stage = str(input_fields["Staging by DPD"].value or "").strip()
+        final_rank = max(stage_ranks.get(qj_stage, 1), stage_ranks.get(dpd_stage, 1))
+        input_fields["Final Stage"].value = f"Stage-{final_rank}"
+
     # Update QJ Stage based on SICR/Impairment dropdown
     def update_qj_stage(e=None):
         sicr_control = input_fields.get("SICR/Impairment")
@@ -113,11 +139,13 @@ def get_funded_ac_profile_form(page: ft.Page):
         elif sicr_val == "Impairment":
             target_stage = "Stage-3"
         else:
-            target_stage = ""
+            target_stage = "Stage-1"
 
         if "QJ Stage" in input_fields:
             input_fields["QJ Stage"].value = target_stage
+            update_final_stage()
             input_fields["QJ Stage"].update()
+            input_fields["Final Stage"].update()
 
     # Calculate Funded AC Metrics
     def calculate_funded_ac(e=None):
@@ -125,6 +153,15 @@ def get_funded_ac_profile_form(page: ft.Page):
         exp_d = fn_exp_datepicker.value.date() if getattr(fn_exp_datepicker, "value", None) else None
         rep1_d = fn_rep1_datepicker.value.date() if getattr(fn_rep1_datepicker, "value", None) else None
         nature_val = input_fields["Nature of Loan"].value
+        is_term_loan = str(nature_val or "").strip().lower() in ("term", "term loan")
+        for field_name in term_loan_only_fields:
+            field = input_fields[field_name]
+            field.disabled = False
+            if field_name in ("Installment Size", "Amount Recovered"):
+                field.read_only = not is_term_loan
+            field.text_style = ft.TextStyle(
+                color="white" if is_term_loan else "white54", size=13
+            )
 
         loan_out_val = 0.0
         accrued_int_val = 0.0
@@ -142,6 +179,9 @@ def get_funded_ac_profile_form(page: ft.Page):
 
         try: loan_limit_val = float(input_fields["Loan Limit"].value or 0)
         except ValueError: pass
+
+        available_limit = max(0.0, loan_limit_val - loan_out_val - accrued_int_val - calc_int_val)
+        input_fields["Available Limit"].value = f"{available_limit:.2f}"
 
         inst_size = 0.0
         rec_amt = 0.0
@@ -162,7 +202,7 @@ def get_funded_ac_profile_form(page: ft.Page):
         overdue_days = 0
         overdue_amt = 0.0
 
-        if nature_val == "Term":
+        if str(nature_val or "").strip().lower() in ("term", "term loan"):
             if rep_d and rep1_d:
                 diff_days = (rep_d - rep1_d).days
                 due_inst_count = max(0.0, diff_days / 30.0)
@@ -192,6 +232,8 @@ def get_funded_ac_profile_form(page: ft.Page):
 
         input_fields["Overdue Period in Days"].value = str(overdue_days)
         input_fields["Overdue Amount"].value = f"{overdue_amt:.2f}"
+        ccf_rate = get_average_credit_conversion_rate(nature_val)
+        input_fields["Credit Conversion Factor (CCF)"].value = f"{ccf_rate:.4f}"
 
         # Calculate Staging by DPD
         if overdue_days <= 30:
@@ -200,16 +242,16 @@ def get_funded_ac_profile_form(page: ft.Page):
             input_fields["Staging by DPD"].value = "Stage-2"
         else:
             input_fields["Staging by DPD"].value = "Stage-3"
+        update_final_stage()
 
         # Calculate Dynamic EAD
         base_ead = loan_out_val + accrued_int_val + calc_int_val
 
-        if str(nature_val).lower() == "continuous":
-            if exp_d and rep_d and rep_d > exp_d:
-                ead_val = base_ead
-            else:
-                ccf_ccod = get_ccod_ccf_rate()
-                ead_val = base_ead + max(0.0, (loan_limit_val - loan_out_val)) * ccf_ccod
+        if str(nature_val or "").strip().lower() in (
+            "continuous", "continuous loan", "ccod", "credit card"
+        ):
+            ccf_rate = float(input_fields["Credit Conversion Factor (CCF)"].value or 0)
+            ead_val = base_ead + ccf_rate * available_limit
         else:
             ead_val = base_ead
 
@@ -235,13 +277,31 @@ def get_funded_ac_profile_form(page: ft.Page):
         elif label_name == "Reporting Date":
             input_fields[label_name] = ft.TextField(label=label_name, value=fn_reporting_date_str, read_only=True, **base_field_style)
         elif label_name == "QJ Stage":
-            input_fields[label_name] = ft.TextField(label=label_name, value="", read_only=True, **base_field_style)
+            input_fields[label_name] = ft.TextField(label=label_name, value="Stage-1", read_only=True, **base_field_style)
+        elif label_name == "Final Stage":
+            input_fields[label_name] = ft.TextField(label=label_name, value="Stage-1", read_only=True, **base_field_style)
+        elif label_name == "Available Limit":
+            input_fields[label_name] = ft.TextField(
+                label=label_name, value="0.00", read_only=True, **base_field_style
+            )
+        elif label_name == "Credit Conversion Factor (CCF)":
+            input_fields[label_name] = ft.TextField(
+                label=label_name, value="0.0000", read_only=True, **base_field_style
+            )
         elif label_name in ["Due Installment (Months)", "Installment Recovered", "Overdue Installment", "Overdue Period in Days", "Overdue Amount", "EAD", "Staging by DPD"]:
             default_val = "0" if label_name == "Overdue Period in Days" else ("Stage-1" if label_name == "Staging by DPD" else "0.00")
-            input_fields[label_name] = ft.TextField(label=label_name, value=default_val, read_only=True, **base_field_style)
+            display_label = "Exposure At Default (EAD)" if label_name == "EAD" else label_name
+            input_fields[label_name] = ft.TextField(
+                label=display_label,
+                value=default_val,
+                read_only=True,
+                **base_field_style
+            )
+            if label_name in term_loan_only_fields:
+                input_fields[label_name].text_style = ft.TextStyle(color="white54", size=13)
         elif label_name in dropdown_options:
             tf = ft.Dropdown(
-                label=label_name,
+                label="Facility Type" if label_name == "Nature of Loan" else label_name,
                 options=[ft.dropdown.Option(opt) for opt in dropdown_options[label_name]],
                 value="None" if label_name == "SICR/Impairment" else None,
                 **base_field_style
@@ -253,8 +313,11 @@ def get_funded_ac_profile_form(page: ft.Page):
             tf = ft.TextField(
                 label=label_name,
                 keyboard_type=ft.KeyboardType.NUMBER if label_name not in ["Customer Name", "Account Number", "Customer Number", "SICR/Impairment Reason"] else ft.KeyboardType.TEXT,
+                read_only=label_name in term_loan_only_fields,
                 **base_field_style
             )
+            if label_name in term_loan_only_fields:
+                tf.text_style = ft.TextStyle(color="white54", size=13)
             if label_name in ["Installment Size", "Amount Recovered", "Loan Outstanding", "Loan Limit", "Accrued Interest", "Calculated Interest"]:
                 tf.on_change = calculate_funded_ac
             elif label_name == "Customer Number":
@@ -289,7 +352,7 @@ def get_funded_ac_profile_form(page: ft.Page):
         input_fields["Account Number"].value = search_key
         input_fields["Customer Number"].value = str(data.get("cust_num") or "")
         input_fields["Customer Name"].value = str(data.get("cust_name") or "")
-        input_fields["Nature of Loan"].value = str(data.get("nature") or "")
+        input_fields["Nature of Loan"].value = display_facility_type(data.get("nature"))
         input_fields["Last Approval Type"].value = str(data.get("approval_type") or "")
         input_fields["Loan Limit"].value = f"{float(data.get('loan_limit', 0)):.2f}"
         input_fields["Loan Outstanding"].value = f"{float(data.get('loan_out', 0)):.2f}"
@@ -302,7 +365,6 @@ def get_funded_ac_profile_form(page: ft.Page):
         input_fields["Overdue Installment"].value = f"{float(data.get('overdue_install', 0)):.2f}"
         input_fields["Overdue Period in Days"].value = str(data.get("overdue_in_days", 0))
         input_fields["Overdue Amount"].value = f"{float(data.get('overdue_amt', 0)):.2f}"
-        input_fields["ECL Category"].value = str(data.get("ecl_category") or "")
         input_fields["EAD"].value = f"{float(data.get('ead', 0)):.2f}"
         input_fields["Staging by DPD"].value = str(data.get("staging_by_dpd") or "Stage-1")
         input_fields["SICR/Impairment"].value = str(data.get("sicr_impairment") or "None")
@@ -333,7 +395,9 @@ def get_funded_ac_profile_form(page: ft.Page):
                 continue
             elif isinstance(tf, CustomDatePicker):
                 tf.clear()
-            elif k in ["Due Installment (Months)", "Installment Recovered", "Overdue Installment", "Overdue Period in Days", "Overdue Amount", "EAD"]:
+            elif k == "Credit Conversion Factor (CCF)":
+                tf.value = "0.0000"
+            elif k in ["Due Installment (Months)", "Installment Recovered", "Overdue Installment", "Overdue Period in Days", "Overdue Amount", "Available Limit", "EAD"]:
                 tf.value = "0.00" if "Days" not in k else "0"
             elif k == "Staging by DPD":
                 tf.value = "Stage-1"
@@ -393,7 +457,7 @@ def get_funded_ac_profile_form(page: ft.Page):
             columns=[
                 ft.DataColumn(ft.Text("A/C No", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Name", color="white", weight="bold", size=11)),
-                ft.DataColumn(ft.Text("Nature", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Facility Type", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Outstanding", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("DPD Stage", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("QJ Stage", color="white", weight="bold", size=11)),
@@ -471,7 +535,7 @@ def get_funded_ac_profile_form(page: ft.Page):
             "overdue_install": parse_flt(input_fields["Overdue Installment"].value),
             "overdue_in_days": parse_int(input_fields["Overdue Period in Days"].value),
             "overdue_amt": parse_flt(input_fields["Overdue Amount"].value),
-            "ecl_category": input_fields["ECL Category"].value or "",
+            "ecl_category": "",
             "ead": parse_flt(input_fields["EAD"].value),
             "staging_by_dpd": input_fields["Staging by DPD"].value or "Stage-1",
             "sicr_impairment": input_fields["SICR/Impairment"].value or "None",

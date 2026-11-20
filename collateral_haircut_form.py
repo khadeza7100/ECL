@@ -10,7 +10,7 @@ def get_collateral_haircut_form(page: ft.Page):
     raw_cache = get_all_collateral_haircuts() or []
     current_year = str(date.today().year)
     
-    property_options = ["Flat", "Land", "Building", "Project", "Fin Instrument"]
+    property_options = ["Flat", "Land", "Building", "Project", "Fin.Instrument", "Share", "Gold", "Govt.Guarantee"]
 
     # Form input fields
     year_dd = ft.Dropdown(
@@ -27,7 +27,7 @@ def get_collateral_haircut_form(page: ft.Page):
     )
 
     property_dropdown = ft.Dropdown(
-        label="Property Type",
+        label="Collateral Type",
         options=[ft.dropdown.Option(opt) for opt in property_options],
         height=45,
         content_padding=ft.Padding(12, 10, 12, 10),
@@ -137,7 +137,7 @@ def get_collateral_haircut_form(page: ft.Page):
         liquidation_time_tf.value = f"{float(data_item.get('liquidation_time_years', 0)):.2f}"
         calculate_haircut_rate()
 
-    # Search fields (Search by Year and Search by Property Type)
+    # Search fields (Search by Year and Search by Collateral Type)
     search_year_tf = ft.TextField(
         hint_text="YYYY",
         hint_style=ft.TextStyle(color="white38", size=13),
@@ -203,7 +203,7 @@ def get_collateral_haircut_form(page: ft.Page):
             width=780,
             columns=[
                 ft.DataColumn(ft.Text("Year", color="white", weight="bold", size=11)),
-                ft.DataColumn(ft.Text("Property Type", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Collateral Type", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Market Value", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Liquidation Value", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Haircut %", color="white", weight="bold", size=11)),
@@ -250,7 +250,7 @@ def get_collateral_haircut_form(page: ft.Page):
         return ft.DataTable(
             width=780,
             columns=[
-                ft.DataColumn(ft.Text("Property Type", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Collateral Type", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Total Records", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Avg Collateral Haircut %", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Avg Liquidation Time (Yrs)", color="white", weight="bold", size=11)),
@@ -282,7 +282,7 @@ def get_collateral_haircut_form(page: ft.Page):
         ft.Text("Search Year:", size=14, weight="bold", color="#00e676"),
         search_year_tf,
         ft.Container(width=10),
-        ft.Text("Property Type:", size=14, weight="bold", color="#00e676"),
+        ft.Text("Collateral Type:", size=14, weight="bold", color="#00e676"),
         search_property_dropdown
     ], vertical_alignment="center", spacing=10)
 
@@ -299,10 +299,10 @@ def get_collateral_haircut_form(page: ft.Page):
         bgcolor="#061d19"
     )
 
-    # Container 3: Averages Summary Table by Property Type
+    # Container 3: Averages Summary Table by Collateral Type
     summary_section_container = ft.Container(
         content=ft.Column([
-            ft.Text("Property Type Averages Summary", size=16, weight="bold", color="#00e676"),
+            ft.Text("Average of Collateral Haircut & Liquidation Time by Collateral Type", size=16, weight="bold", color="#00e676"),
             ft.Container(height=8),
             ft.Row([summary_table_holder], scroll=ft.ScrollMode.AUTO, expand=True)
         ], horizontal_alignment="stretch"),
@@ -326,7 +326,7 @@ def get_collateral_haircut_form(page: ft.Page):
         prop = property_dropdown.value or ""
 
         if not yr or not prop:
-            page.overlay.append(ft.SnackBar(content=ft.Text("Please enter Year and select Property Type!"), bgcolor="#ff9800", open=True))
+            page.overlay.append(ft.SnackBar(content=ft.Text("Please enter Year and select Collateral Type!"), bgcolor="#ff9800", open=True))
             page.update()
             return
 

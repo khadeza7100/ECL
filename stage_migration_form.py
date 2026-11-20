@@ -422,7 +422,7 @@ def get_stage_migration_form(page: ft.Page):
         try:
             save_stage_migration_rate(payload)
             update_all_containers()
-            page.overlay.append(ft.SnackBar(content=ft.Text(f"Stage Migration Rate for {yr}-{month_num:02d} ({migrated_from} to {migrated_to}) saved successfully!"), bgcolor="#00e676", open=True))
+            page.overlay.append(ft.SnackBar(content=ft.Text(f"Stage Migration Rate / Role Rate for {yr}-{month_num:02d} ({migrated_from} to {migrated_to}) saved successfully!"), bgcolor="#00e676", open=True))
         except Exception as err:
             page.overlay.append(ft.SnackBar(content=ft.Text(f"Error saving Migration Rate: {str(err)}"), bgcolor="red", open=True))
         page.update()
@@ -431,7 +431,7 @@ def get_stage_migration_form(page: ft.Page):
         try:
             delete_stage_migration_rate(yr, month, migrated_from, migrated_to)
             update_all_containers()
-            page.overlay.append(ft.SnackBar(content=ft.Text(f"Stage Migration Rate for {yr}-{month} ({migrated_from} to {migrated_to}) deleted successfully!"), bgcolor="#ff5252", open=True))
+            page.overlay.append(ft.SnackBar(content=ft.Text(f"Stage Migration Rate / Role Rate for {yr}-{month} ({migrated_from} to {migrated_to}) deleted successfully!"), bgcolor="#ff5252", open=True))
         except Exception as err:
             page.overlay.append(ft.SnackBar(content=ft.Text(f"Error deleting: {str(err)}"), bgcolor="red", open=True))
         page.update()
@@ -446,7 +446,7 @@ def get_stage_migration_form(page: ft.Page):
     # Input Form Container
     input_form_card = ft.Container(
         content=ft.Column([
-            ft.Container(content=ft.Text("Stage Migration Rate", size=20, weight="bold", color="#00e676"), alignment=ft.Alignment(0, 0), padding=ft.Padding(0, 0, 0, 15)),
+            ft.Container(content=ft.Text("Stage Migration Rate / Role Rate", size=20, weight="bold", color="#00e676"), alignment=ft.Alignment(0, 0), padding=ft.Padding(0, 0, 0, 15)),
             row1,
             ft.Container(height=5),
             row2,

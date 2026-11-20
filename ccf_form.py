@@ -6,11 +6,12 @@ from database import (
     get_all_credit_conversion_factors,
     delete_credit_conversion_factor
 )
+from components.facility_types import ALL_FACILITY_TYPES
 
 def get_ccf_form(page: ft.Page):
     raw_cache = get_all_credit_conversion_factors() or []
     
-    facility_options = ["CCOD", "BG", "Cash LC", "BBLC"]
+    facility_options = list(ALL_FACILITY_TYPES)
     current_year = str(datetime.now().year)
 
     # Form input fields
@@ -123,7 +124,7 @@ def get_ccf_form(page: ft.Page):
         demand_loan_tf.value = f"{float(data_item.get('demand_loan_created', 0)):.2f}"
         calculate_cc_rate()
 
-    # Search fields (Search by Year and Search by Facility Type)
+    # Search fields (Search by Year and Facility Type)
     search_year_tf = ft.TextField(
         hint_text="YYYY",
         hint_style=ft.TextStyle(color="white38", size=13),
@@ -136,29 +137,31 @@ def get_ccf_form(page: ft.Page):
         keyboard_type=ft.KeyboardType.NUMBER
     )
 
-    search_facility_dropdown = ft.Dropdown(
-        hint_text="All Types",
-        options=[ft.dropdown.Option("All")] + [ft.dropdown.Option(opt) for opt in facility_options],
-        width=130,
+    search_facility_tf = ft.TextField(
+        hint_text="Search facility type",
+        hint_style=ft.TextStyle(color="white38", size=13),
+        width=160,
         height=40,
-        content_padding=ft.Padding(10, 0, 10, 0),
+        content_padding=ft.Padding(10, 8, 10, 8),
         border_color="#00e676",
         focused_border_color="#00e676",
-        text_style=ft.TextStyle(color="white", size=13),
-        value="All"
+        text_style=ft.TextStyle(color="white", size=13)
     )
 
     history_table_holder = ft.Container(expand=True)
     summary_table_holder = ft.Container(expand=True)
 
-    def get_table_control(yr_search="", fac_search="All"):
+    def get_table_control(yr_search="", fac_search=""):
         filtered = list(raw_cache)
 
         if yr_search.strip():
             filtered = [r for r in filtered if yr_search.strip().lower() in str(r.get("year", "")).lower()]
 
-        if fac_search and fac_search != "All":
-            filtered = [r for r in filtered if str(r.get("facility_type", "")).lower() == fac_search.lower()]
+        if fac_search.strip():
+            filtered = [
+                r for r in filtered
+                if fac_search.strip().lower() in str(r.get("facility_type", "")).lower()
+            ]
 
         filtered = filtered[:10]
 
@@ -244,26 +247,26 @@ def get_ccf_form(page: ft.Page):
         )
 
     def render_all_tables():
-        history_table_holder.content = get_table_control(search_year_tf.value or "", search_facility_dropdown.value or "All")
+        history_table_holder.content = get_table_control(search_year_tf.value or "", search_facility_tf.value or "")
         summary_table_holder.content = get_summary_table_control()
 
     # Event handlers for search filtering
     def update_search_filter(e):
         history_table_holder.content = get_table_control(
             search_year_tf.value or "",
-            search_facility_dropdown.value or "All"
+            search_facility_tf.value or ""
         )
         history_table_holder.update()
 
     search_year_tf.on_change = update_search_filter
-    search_facility_dropdown.on_select = update_search_filter
+    search_facility_tf.on_change = update_search_filter
 
     search_header_row = ft.Row([
         ft.Text("Search Year:", size=14, weight="bold", color="#00e676"),
         search_year_tf,
         ft.Container(width=10),
         ft.Text("Facility Type:", size=14, weight="bold", color="#00e676"),
-        search_facility_dropdown
+        search_facility_tf
     ], vertical_alignment="center", spacing=10)
 
     # Container 2: Detailed Records & Search Table
@@ -282,7 +285,7 @@ def get_ccf_form(page: ft.Page):
     # Container 3: Averages Summary Table by Facility Type
     summary_section_container = ft.Container(
         content=ft.Column([
-            ft.Text("Facility Type Averages Summary", size=16, weight="bold", color="#00e676"),
+            ft.Text("Average Credit Conversion Rate by Facility Type", size=16, weight="bold", color="#00e676"),
             ft.Container(height=8),
             ft.Row([summary_table_holder], scroll=ft.ScrollMode.AUTO, expand=True)
         ], horizontal_alignment="stretch"),

@@ -52,15 +52,6 @@ def get_left_sidebar(page, all_submenu_controls, handle_submenu_click, return_to
             create_sub_item("non_funded_ac", "Non-Funded A/C Profile", lambda e: get_form_action("non_funded_ac"))              
         ], "#00e676"),
 
-        create_menu_section("Upload CSV", [
-            create_sub_item("upload_corporate", "Corporate Profile", lambda e: get_form_action("upload_corporate")),
-            create_sub_item("upload_individual", "Individual Profile", lambda e: get_form_action("upload_individual")),
-            create_sub_item("upload_collateral", "Collateral Profile", lambda e: get_form_action("upload_collateral")),
-            create_sub_item("upload_credit_ratings", "Credit Rating Profile", lambda e: get_form_action("upload_credit_ratings")),
-            create_sub_item("upload_funded_ac", "Funded A/C Profile", lambda e: get_form_action("upload_funded_ac")),
-            create_sub_item("upload_non_funded_ac", "Non-Funded A/C Profile", lambda e: get_form_action("upload_non_funded_ac")),
-        ], "#1de9b6"),
-
         create_menu_section("Global Settings", [
             create_sub_item("proxy_data_model", "Proxy Data & Model Selection", lambda e: get_form_action("proxy_data_model")),
             create_sub_item("economic_variables", "Economic Variables", lambda e: get_form_action("economic_variables")),
@@ -68,15 +59,21 @@ def get_left_sidebar(page, all_submenu_controls, handle_submenu_click, return_to
             create_sub_item("ccf", "Credit Conversion Factor", lambda e: get_form_action("ccf")),
             create_sub_item("discounting_factor", "Discounting Factor", lambda e: get_form_action("discounting_factor")),
             create_sub_item("loan_staging_criteria", "Loan Staging Criteria",lambda e: get_form_action("loan_staging_criteria")), 
-            create_sub_item("calc_smr", "Stage Migration Rate", lambda e: get_form_action("calc_smr")),
+            create_sub_item("calc_smr", "Stage Migration Rate / Role Rate", lambda e: get_form_action("calc_smr")),
             
         ], "#a7ffeb"),
 
         create_menu_section("Expected Credit Loss", [
-            create_sub_item("calc_pd", "Calculate PD"),
-            create_sub_item("calc_lgd", "Calculate LGD"),
-            create_sub_item("calc_ead", "Calculate EAD"),
             create_sub_item("calc_ecl", "Calculate ECL")
+        ], "#1de9b6"),
+
+        create_menu_section("Upload CSV", [
+            create_sub_item("upload_corporate", "Corporate Profile", lambda e: get_form_action("upload_corporate")),
+            create_sub_item("upload_individual", "Individual Profile", lambda e: get_form_action("upload_individual")),
+            create_sub_item("upload_collateral", "Collateral Profile", lambda e: get_form_action("upload_collateral")),
+            create_sub_item("upload_credit_ratings", "Credit Rating Profile", lambda e: get_form_action("upload_credit_ratings")),
+            create_sub_item("upload_funded_ac", "Funded A/C Profile", lambda e: get_form_action("upload_funded_ac")),
+            create_sub_item("upload_non_funded_ac", "Non-Funded A/C Profile", lambda e: get_form_action("upload_non_funded_ac")),
         ], "#1de9b6"),
     ], scroll=ft.ScrollMode.ALWAYS, expand=True)
 

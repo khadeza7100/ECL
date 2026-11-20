@@ -5,23 +5,26 @@ from database import (
     delete_collateral_profile_by_id,
     get_customer_name_by_number,
     is_customer_exists_in_table,
-    get_all_collateral_haircuts
+    get_all_collateral_haircuts,
+    get_discounting_factor
 )
 from components.custom_datepicker import CustomDatePicker
 
-def get_avg_collateral_haircut(property_type: str) -> float:
-    """Calculates average haircut percentage for the given property type from database records."""
+def get_avg_collateral_metrics(property_type: str) -> tuple[float, float]:
+    """Returns the average haircut and liquidation time for a collateral type."""
     if not property_type:
-        return 0.0
+        return 0.0, 0.0
     haircut_records = get_all_collateral_haircuts() or []
-    matching_rates = [
-        float(r.get("haircut_rate", 0.0))
+    matching_records = [
+        r
         for r in haircut_records
         if str(r.get("property_type", "")).strip().lower() == str(property_type).strip().lower()
     ]
-    if matching_rates:
-        return sum(matching_rates) / len(matching_rates)
-    return 0.0
+    if not matching_records:
+        return 0.0, 0.0
+    avg_haircut = sum(float(r.get("haircut_rate", 0.0)) for r in matching_records) / len(matching_records)
+    avg_liquidation_time = sum(float(r.get("liquidation_time_years", 0.0)) for r in matching_records) / len(matching_records)
+    return avg_haircut, avg_liquidation_time
 
 def process_raw_collateral_cache(raw_cache):
     """
@@ -67,15 +70,21 @@ def get_collateral_profile_form(page: ft.Page):
 
     raw_cache = get_all_collateral_profiles() or []
     full_db_cache = process_raw_collateral_cache(raw_cache)
+    stored_discounting_factor = get_discounting_factor()
+    discounting_factor_value = (
+        f"{stored_discounting_factor:.4f}"
+        if stored_discounting_factor is not None
+        else "0.0000"
+    )
 
     # Field options definitions
     dropdown_options = {
-        "Eligible Security Type": ["Flat", "Land", "Building", "Project", "Fin.Instrument", "Share", "Gold", "Govt.Guarantee"],
+        "Collateral Type": ["Flat", "Land", "Building", "Project", "Fin.Instrument", "Share", "Gold", "Govt.Guarantee"],
         "Measurement Unit": ["Decimal", "Ton", "Vori", "Number", "Squre Feet"],
         "Quality of Collateral": ["Genuinge", "Disputed", "Major Audit Obj.", "Fake", "NA"]
     }
 
-    numeric_fields = ["Quantity of Security", "Market Value of Security"]
+    numeric_fields = ["Quantity of Security", "Market Value"]
 
     # Custom DatePicker Component Instance
     cp_datepicker = CustomDatePicker(
@@ -91,9 +100,10 @@ def get_collateral_profile_form(page: ft.Page):
 
     # Input Fields Definition including FSV
     all_field_names = [
-        "Customer Number", "Customer Name", "Eligible Security Type",
+        "Customer Number", "Customer Name", "Collateral Type",
         "Quantity of Security", "Measurement Unit", "Valuation Date",
-        "Market Value of Security", "FSV", "Quality of Collateral"
+        "Market Value", "Average Haicut %", "FSV",
+        "Average Liquidation Time (Yr.)", "Discounting Factor", "Present Value (PV)", "Quality of Collateral"
     ]
 
     def parse_flt(val):
@@ -102,20 +112,54 @@ def get_collateral_profile_form(page: ft.Page):
         except ValueError:
             return 0.00
 
-    def calculate_fsv(e=None):
-        market_val = parse_flt(input_fields["Market Value of Security"].value)
-        sec_type = input_fields["Eligible Security Type"].value
-        avg_haircut = get_avg_collateral_haircut(sec_type)
+    present_value_is_valid = True
 
-        fsv_val = market_val * (1.0 - avg_haircut)
+    def calculate_fsv(e=None):
+        nonlocal present_value_is_valid
+        market_val = parse_flt(input_fields["Market Value"].value)
+        sec_type = input_fields["Collateral Type"].value
+        avg_haircut, avg_liquidation_time = get_avg_collateral_metrics(sec_type)
+
+        input_fields["Average Haicut %"].value = f"{avg_haircut:.4f}"
+        input_fields["Average Liquidation Time (Yr.)"].value = f"{avg_liquidation_time:.2f}"
+        fsv_val = market_val * (1 - avg_haircut)
         input_fields["FSV"].value = f"{fsv_val:.2f}"
+        discount_rate = (stored_discounting_factor or 0.0) / 100
+        discount_base = 1 + discount_rate
+        present_value_is_valid = discount_base > 0
+        if present_value_is_valid:
+            present_value = fsv_val / (discount_base ** avg_liquidation_time)
+            input_fields["Present Value (PV)"].value = f"{present_value:.4f}"
+        else:
+            input_fields["Present Value (PV)"].value = "Invalid discount rate"
         page.update()
 
     for label_name in all_field_names:
         if label_name == "FSV":
             tf = ft.TextField(
-                label=label_name,
+                label="Forced Sale Value (FSV)",
                 value="0.00",
+                read_only=True,
+                **base_field_style
+            )
+        elif label_name == "Discounting Factor":
+            tf = ft.TextField(
+                label=label_name,
+                value=discounting_factor_value,
+                read_only=True,
+                **base_field_style
+            )
+        elif label_name in ("Average Haicut %", "Average Liquidation Time (Yr.)"):
+            tf = ft.TextField(
+                label=label_name,
+                value="0.0000" if label_name == "Average Haicut %" else "0.00",
+                read_only=True,
+                **base_field_style
+            )
+        elif label_name == "Present Value (PV)":
+            tf = ft.TextField(
+                label=label_name,
+                value="0.0000",
                 read_only=True,
                 **base_field_style
             )
@@ -125,7 +169,7 @@ def get_collateral_profile_form(page: ft.Page):
                 options=[ft.dropdown.Option(opt) for opt in dropdown_options[label_name]],
                 **base_field_style
             )
-            if label_name == "Eligible Security Type":
+            if label_name == "Collateral Type":
                 tf.on_select = calculate_fsv
         elif label_name == "Valuation Date":
             tf = cp_datepicker.input_field
@@ -138,7 +182,7 @@ def get_collateral_profile_form(page: ft.Page):
             )
             if label_name == "Customer Number":
                 tf.on_change = on_customer_number_change
-            elif label_name == "Market Value of Security":
+            elif label_name == "Market Value":
                 tf.on_change = calculate_fsv
 
         input_fields[label_name] = tf
@@ -164,12 +208,14 @@ def get_collateral_profile_form(page: ft.Page):
 
         input_fields["Customer Number"].value = str(data.get("customer_number") or "")
         input_fields["Customer Name"].value = str(data.get("customer_name") or "")
-        input_fields["Eligible Security Type"].value = str(data.get("security_type") or "")
+        input_fields["Collateral Type"].value = str(data.get("security_type") or "")
         input_fields["Quantity of Security"].value = str(data.get("quantity") or "0.00")
         input_fields["Measurement Unit"].value = str(data.get("measurement_unit") or "")
         input_fields["Valuation Date"].value = str(data.get("valuation_date") or "")
-        input_fields["Market Value of Security"].value = str(data.get("market_value") or "0.00")
+        input_fields["Market Value"].value = str(data.get("market_value") or "0.00")
         input_fields["FSV"].value = str(data.get("fsv") or "0.00")
+        input_fields["Discounting Factor"].value = discounting_factor_value
+        input_fields["Present Value (PV)"].value = str(data.get("lgd") or "0.0000")
         input_fields["Quality of Collateral"].value = str(data.get("collateral_quality") or "")
 
         calculate_fsv()
@@ -179,6 +225,14 @@ def get_collateral_profile_form(page: ft.Page):
         for k, tf in input_fields.items():
             if k == "FSV":
                 tf.value = "0.00"
+            elif k == "Discounting Factor":
+                tf.value = discounting_factor_value
+            elif k == "Average Haicut %":
+                tf.value = "0.0000"
+            elif k == "Average Liquidation Time (Yr.)":
+                tf.value = "0.00"
+            elif k == "Present Value (PV)":
+                tf.value = "0.0000"
             else:
                 tf.value = ""
         page.update()
@@ -230,6 +284,8 @@ def get_collateral_profile_form(page: ft.Page):
                 ft.DataCell(ft.Text(str(c_data.get("security_type", "")), color="white", size=11)),
                 ft.DataCell(ft.Text(str(c_data.get("market_value", "")), color="white", size=11)),
                 ft.DataCell(ft.Text(str(c_data.get("fsv", "0.00")), color="white", weight="bold", size=11)),
+                ft.DataCell(ft.Text(discounting_factor_value, color="white", weight="bold", size=11)),
+                ft.DataCell(ft.Text(str(c_data.get("lgd", "0.0000")), color="white", weight="bold", size=11)),
                 ft.DataCell(ft.Text(str(c_data.get("collateral_quality", "")), color="white", size=11)),
                 ft.DataCell(action_cell)
             ]
@@ -240,9 +296,11 @@ def get_collateral_profile_form(page: ft.Page):
             columns=[
                 ft.DataColumn(ft.Text("Cust No", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Name", color="white", weight="bold", size=11)),
-                ft.DataColumn(ft.Text("Sec. Type", color="white", weight="bold", size=11)),
-                ft.DataColumn(ft.Text("Market Val", color="white", weight="bold", size=11)),
-                ft.DataColumn(ft.Text("FSV", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Coll. Type", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Market Value", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Forced Sale Value (FSV)", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Discounting Factor", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Present Value (PV)", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Quality", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Actions", color="white", weight="bold", size=11)),
             ],
@@ -293,16 +351,25 @@ def get_collateral_profile_form(page: ft.Page):
             return
 
         calculate_fsv()
+        if not present_value_is_valid:
+            page.overlay.append(ft.SnackBar(
+                content=ft.Text("Discounting Factor must be greater than -100% to calculate Present Value."),
+                bgcolor="#ff9800",
+                open=True
+            ))
+            page.update()
+            return
 
         payload = {
             "customer_number": cust_num,
             "customer_name": input_fields["Customer Name"].value.strip() if input_fields["Customer Name"].value else "",
-            "security_type": input_fields["Eligible Security Type"].value or "",
+            "security_type": input_fields["Collateral Type"].value or "",
             "quantity": parse_flt(input_fields["Quantity of Security"].value),
             "measurement_unit": input_fields["Measurement Unit"].value or "",
             "valuation_date": input_fields["Valuation Date"].value or "",
-            "market_value": parse_flt(input_fields["Market Value of Security"].value),
+            "market_value": parse_flt(input_fields["Market Value"].value),
             "fsv": parse_flt(input_fields["FSV"].value),
+            "lgd": parse_flt(input_fields["Present Value (PV)"].value),
             "collateral_quality": input_fields["Quality of Collateral"].value or ""
         }
 

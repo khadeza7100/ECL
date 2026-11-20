@@ -9,9 +9,10 @@ from database import (
     get_all_credit_conversion_factors
 )
 from components.custom_datepicker import CustomDatePicker
+from components.facility_types import NON_FUNDED_FACILITY_TYPES
 
 def get_non_funded_ccf_rate(facility_type: str) -> float:
-    """Fetches CCF rate from database based on Cont. Liability Type."""
+    """Fetches CCF rate from the database based on facility type."""
     if not facility_type:
         return 0.0
     ccf_records = get_all_credit_conversion_factors() or []
@@ -46,7 +47,7 @@ def get_non_funded_ac_profile_form(page: ft.Page):
     nf_reporting_date_str = last_month_end.strftime("%d/%m/%Y")
 
     dropdown_options = {
-        "Cont. Liability Type": ["BG", "Cash LC", "BBLC"],
+        "Cont. Liability Type": list(NON_FUNDED_FACILITY_TYPES),
         "SICR/Impairment": ["None", "SICR", "Impairment"]
     }
 
@@ -55,7 +56,8 @@ def get_non_funded_ac_profile_form(page: ft.Page):
         "Account Number", "Cont. Liability Type", "Account Limit",
         "Amount of Liability", "Issue Date", "Expiry Date", 
         "Overdue Period in Days", "Margin Kept", "CCF", "EAD",
-        "Staging by DPD", "SICR/Impairment", "QJ Stage", "SICR/Impairment Reason"
+        "Staging by DPD", "SICR/Impairment", "QJ Stage", "Final Stage",
+        "SICR/Impairment Reason"
     ]
 
     # --- 1. EVENT HANDLERS ---
@@ -81,6 +83,13 @@ def get_non_funded_ac_profile_form(page: ft.Page):
             page.overlay.append(ft.SnackBar(content=ft.Text(f"Warning: Account {ac_num} exists in Funded A/C Profiles!"), bgcolor="#ff9800", open=True))
         page.update()
 
+    def update_final_stage():
+        stage_ranks = {"Stage-1": 1, "Stage-2": 2, "Stage-3": 3}
+        qj_stage = str(input_fields["QJ Stage"].value or "").strip()
+        dpd_stage = str(input_fields["Staging by DPD"].value or "").strip()
+        final_rank = max(stage_ranks.get(qj_stage, 1), stage_ranks.get(dpd_stage, 1))
+        input_fields["Final Stage"].value = f"Stage-{final_rank}"
+
     def update_qj_stage(e=None):
         sicr_control = input_fields.get("SICR/Impairment")
         if e is not None and getattr(e, "control", None) is sicr_control:
@@ -97,6 +106,7 @@ def get_non_funded_ac_profile_form(page: ft.Page):
 
         if "QJ Stage" in input_fields:
             input_fields["QJ Stage"].value = target_stage
+            update_final_stage()
             page.update()
 
     def calculate_non_funded_ac(e=None):
@@ -116,6 +126,7 @@ def get_non_funded_ac_profile_form(page: ft.Page):
             input_fields["Staging by DPD"].value = "Stage-2"
         else:
             input_fields["Staging by DPD"].value = "Stage-3"
+        update_final_stage()
 
         facility_type = input_fields["Cont. Liability Type"].value
         ccf_val = get_non_funded_ccf_rate(facility_type)
@@ -155,12 +166,18 @@ def get_non_funded_ac_profile_form(page: ft.Page):
             input_fields[label_name] = ft.TextField(label=label_name, value=nf_reporting_date_str, read_only=True, **base_field_style)
         elif label_name == "QJ Stage":
             input_fields[label_name] = ft.TextField(label=label_name, value="Stage-1", read_only=True, **base_field_style)
+        elif label_name == "Final Stage":
+            input_fields[label_name] = ft.TextField(label=label_name, value="Stage-1", read_only=True, **base_field_style)
         elif label_name in ["Overdue Period in Days", "CCF", "EAD", "Staging by DPD"]:
             default_val = "0" if label_name == "Overdue Period in Days" else ("Stage-1" if label_name == "Staging by DPD" else "0.00")
-            input_fields[label_name] = ft.TextField(label=label_name, value=default_val, read_only=True, **base_field_style)
+            display_label = {
+                "CCF": "Credit Conversion Factor (CCF)",
+                "EAD": "Exposure At Default (EAD)",
+            }.get(label_name, label_name)
+            input_fields[label_name] = ft.TextField(label=display_label, value=default_val, read_only=True, **base_field_style)
         elif label_name in dropdown_options:
             input_fields[label_name] = ft.Dropdown(
-                label=label_name,
+                label="Facility Type" if label_name == "Cont. Liability Type" else label_name,
                 options=[ft.dropdown.Option(opt) for opt in dropdown_options[label_name]],
                 value="None" if label_name == "SICR/Impairment" else None,
                 on_select=update_qj_stage if label_name == "SICR/Impairment" else None,
@@ -291,8 +308,8 @@ def get_non_funded_ac_profile_form(page: ft.Page):
             columns=[
                 ft.DataColumn(ft.Text("A/C No", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Name", color="white", weight="bold", size=11)),
-                ft.DataColumn(ft.Text("Type", color="white", weight="bold", size=11)),
-                ft.DataColumn(ft.Text("EAD", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Facility Type", color="white", weight="bold", size=11)),
+                ft.DataColumn(ft.Text("Exposure At Default (EAD)", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("DPD Stage", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("QJ Stage", color="white", weight="bold", size=11)),
                 ft.DataColumn(ft.Text("Actions", color="white", weight="bold", size=11)),
