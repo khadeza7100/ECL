@@ -5,18 +5,30 @@ from database import (
     get_all_collateral_haircuts,
     delete_collateral_haircut
 )
+from components.dropdown_configuration import (
+    get_configured_dropdown_options,
+    get_configured_year_options,
+)
 
 def get_collateral_haircut_form(page: ft.Page):
     raw_cache = get_all_collateral_haircuts() or []
     current_year = str(date.today().year)
+    year_options = get_configured_year_options(
+        record.get("year") for record in raw_cache
+    )
+    default_year = (
+        current_year
+        if current_year in year_options
+        else (year_options[-1] if year_options else None)
+    )
     
-    property_options = ["Flat", "Land", "Building", "Project", "Fin.Instrument", "Share", "Gold", "Govt.Guarantee"]
+    property_options = get_configured_dropdown_options("collateral.type")
 
     # Form input fields
     year_dd = ft.Dropdown(
         label="Year",
-        options=[ft.dropdown.Option(str(year)) for year in range(2020, int(current_year) + 1)],
-        value=current_year,
+        options=[ft.dropdown.Option(year) for year in year_options],
+        value=default_year,
         height=45,
         content_padding=ft.Padding(12, 10, 12, 10),
         border_color="#00e676",
@@ -121,7 +133,7 @@ def get_collateral_haircut_form(page: ft.Page):
     ], spacing=15)
 
     def clear_form_fields():
-        year_dd.value = current_year
+        year_dd.value = default_year
         property_dropdown.value = None
         market_value_tf.value = ""
         liquidation_value_tf.value = ""
@@ -139,6 +151,7 @@ def get_collateral_haircut_form(page: ft.Page):
 
     # Search fields (Search by Year and Search by Collateral Type)
     search_year_tf = ft.TextField(
+        value=current_year,
         hint_text="YYYY",
         hint_style=ft.TextStyle(color="white38", size=13),
         width=100,
@@ -330,8 +343,8 @@ def get_collateral_haircut_form(page: ft.Page):
             page.update()
             return
 
-        if int(yr) > int(current_year):
-            page.overlay.append(ft.SnackBar(content=ft.Text("Year cannot be greater than the current year."), bgcolor="#ff9800", open=True))
+        if yr not in year_options:
+            page.overlay.append(ft.SnackBar(content=ft.Text("Select a configured Year."), bgcolor="#ff9800", open=True))
             page.update()
             return
 

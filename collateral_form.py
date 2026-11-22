@@ -9,6 +9,7 @@ from database import (
     get_discounting_factor
 )
 from components.custom_datepicker import CustomDatePicker
+from components.dropdown_configuration import get_configured_dropdown_options
 
 def get_avg_collateral_metrics(property_type: str) -> tuple[float, float]:
     """Returns the average haircut and liquidation time for a collateral type."""
@@ -79,9 +80,9 @@ def get_collateral_profile_form(page: ft.Page):
 
     # Field options definitions
     dropdown_options = {
-        "Collateral Type": ["Flat", "Land", "Building", "Project", "Fin.Instrument", "Share", "Gold", "Govt.Guarantee"],
-        "Measurement Unit": ["Decimal", "Ton", "Vori", "Number", "Squre Feet"],
-        "Quality of Collateral": ["Genuinge", "Disputed", "Major Audit Obj.", "Fake", "NA"]
+        "Collateral Type": get_configured_dropdown_options("collateral.type"),
+        "Measurement Unit": get_configured_dropdown_options("collateral.measurement_unit"),
+        "Quality of Collateral": get_configured_dropdown_options("collateral.quality"),
     }
 
     numeric_fields = ["Quantity of Security", "Market Value"]

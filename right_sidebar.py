@@ -1,9 +1,18 @@
 import flet as ft
 
-def get_right_sidebar(page, all_submenu_controls, handle_submenu_click, return_to_home_view):
+def get_right_sidebar(
+    page,
+    all_submenu_controls,
+    handle_submenu_click,
+    return_to_home_view,
+    get_form_action=None,
+    on_sidebar_use=None,
+):
     menu_sections = []
 
     def on_menu_section_change(e):
+        if on_sidebar_use is not None:
+            on_sidebar_use()
         if e.control.expanded:
             for section in menu_sections:
                 if section is not e.control:
@@ -12,6 +21,8 @@ def get_right_sidebar(page, all_submenu_controls, handle_submenu_click, return_t
 
     # Submenu item helper
     def create_sub_item(text, ui_action=None):
+        if ui_action is None and get_form_action is not None:
+            ui_action = lambda e: get_form_action(text)
         text_control = ft.Text(f"  └─ {text}", size=12, color="white70")
         all_submenu_controls[text] = text_control 
         return ft.Container(
@@ -42,9 +53,15 @@ def get_right_sidebar(page, all_submenu_controls, handle_submenu_click, return_t
             create_sub_item("Stage-2-Accounts"), 
             create_sub_item("Stage-3-Accounts")
         ], "#1de9b6"),
-        create_menu_section("Testing & Validation", [
+        create_menu_section("Back/Stress Testing", [
             create_sub_item("Back Testing"), 
             create_sub_item("Stress Testing")
+        ], "#00bfa5"),
+        create_menu_section("EV Validation", [
+            create_sub_item("P-Value"),
+            create_sub_item("Multicollinearity"),
+            create_sub_item("Variance Inflation Factor"),
+            create_sub_item("R-Squared")
         ], "#00bfa5"),
         create_menu_section("Parameters & Logs", [
             create_sub_item("PD by Category"), 

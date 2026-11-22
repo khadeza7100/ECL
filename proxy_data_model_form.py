@@ -31,18 +31,6 @@ def get_proxy_data_model_form(page: ft.Page):
     discounting_factor = create_read_only_field(discounting_factor_value)
     economic_variables = create_read_only_field("Use data from BB website")
 
-    # Disabled Save Button
-    save_btn = ft.ElevatedButton(
-        content=ft.Text("Save", color="black", weight="bold", size=14),
-        disabled=True,
-        style=ft.ButtonStyle(
-            bgcolor="#78eb64",
-            shape=ft.RoundedRectangleBorder(radius=4)
-        ),
-        height=36,
-        width=100
-    )
-
     def build_row(label_text, input_control):
         return ft.Row(
             controls=[
@@ -70,8 +58,7 @@ def get_proxy_data_model_form(page: ft.Page):
                 build_row("Adjusted PD (APD)", suggestive_pd),
                 build_row("Discounting Factor", discounting_factor),
                 build_row("Economic Variables (EV)", economic_variables),
-                ft.Container(height=10),
-                ft.Row([save_btn], alignment="end")
+                ft.Container(height=10)
             ],
             spacing=6  # Reduced vertical gap between consecutive rows
         ),

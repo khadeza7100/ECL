@@ -1,30 +1,20 @@
 import flet as ft
-from datetime import date, timedelta
 from database import (
     save_non_funded_ac_profile,
     get_all_non_funded_ac_profiles,
     delete_non_funded_ac_profile_by_id,
     get_customer_name_by_number,
     is_account_exists_in_table,
-    get_all_credit_conversion_factors
+    get_all_credit_conversion_factors,
+    get_reporting_date
 )
 from components.custom_datepicker import CustomDatePicker
-from components.facility_types import NON_FUNDED_FACILITY_TYPES
-
-def get_non_funded_ccf_rate(facility_type: str) -> float:
-    """Fetches CCF rate from the database based on facility type."""
-    if not facility_type:
-        return 0.0
-    ccf_records = get_all_credit_conversion_factors() or []
-    for record in ccf_records:
-        if str(record.get("facility_type", "")).strip().upper() == str(facility_type).strip().upper():
-            return float(record.get("cc_rate", 0.0))
-    return 0.0
-
-def get_last_month_end_date() -> date:
-    today = date.today()
-    first_day_of_current_month = date(today.year, today.month, 1)
-    return first_day_of_current_month - timedelta(days=1)
+from components.dropdown_configuration import get_configured_dropdown_options
+from components.reporting_dates import get_effective_reporting_date
+from components.ead_calculations import (
+    calculate_non_funded_ead,
+    get_non_funded_credit_conversion_rate,
+)
 
 def get_non_funded_ac_profile_form(page: ft.Page):
     input_fields = {}
@@ -43,12 +33,12 @@ def get_non_funded_ac_profile_form(page: ft.Page):
     raw_cache = get_all_non_funded_ac_profiles() or {}
     full_db_cache = {str(k).strip(): v for k, v in raw_cache.items()}
 
-    last_month_end = get_last_month_end_date()
-    nf_reporting_date_str = last_month_end.strftime("%d/%m/%Y")
+    reporting_date = get_effective_reporting_date(get_reporting_date())
+    nf_reporting_date_str = reporting_date.strftime("%d/%m/%Y")
 
     dropdown_options = {
-        "Cont. Liability Type": list(NON_FUNDED_FACILITY_TYPES),
-        "SICR/Impairment": ["None", "SICR", "Impairment"]
+        "Cont. Liability Type": get_configured_dropdown_options("non_funded.facility_type"),
+        "SICR/Impairment": get_configured_dropdown_options("account.impairment"),
     }
 
     all_field_names = [
@@ -57,7 +47,7 @@ def get_non_funded_ac_profile_form(page: ft.Page):
         "Amount of Liability", "Issue Date", "Expiry Date", 
         "Overdue Period in Days", "Margin Kept", "CCF", "EAD",
         "Staging by DPD", "SICR/Impairment", "QJ Stage", "Final Stage",
-        "SICR/Impairment Reason"
+        "SICR/Impairment Reason", "PV of Collateral", "Loss Given Default (LGD)"
     ]
 
     # --- 1. EVENT HANDLERS ---
@@ -110,7 +100,7 @@ def get_non_funded_ac_profile_form(page: ft.Page):
             page.update()
 
     def calculate_non_funded_ac(e=None):
-        rep_d = last_month_end
+        rep_d = reporting_date
         exp_d = nf_exp_datepicker.value.date() if getattr(nf_exp_datepicker, "value", None) else None
 
         overdue_days = 0
@@ -129,7 +119,11 @@ def get_non_funded_ac_profile_form(page: ft.Page):
         update_final_stage()
 
         facility_type = input_fields["Cont. Liability Type"].value
-        ccf_val = get_non_funded_ccf_rate(facility_type)
+        ccf_records = get_all_credit_conversion_factors() or []
+        ccf_val = get_non_funded_credit_conversion_rate(
+            facility_type,
+            ccf_records,
+        )
         input_fields["CCF"].value = f"{ccf_val:.4f}"
 
         amt_liability = 0.0
@@ -144,7 +138,11 @@ def get_non_funded_ac_profile_form(page: ft.Page):
         except ValueError:
             pass
 
-        ead_val = max(0.0, (amt_liability - margin_kept) * ccf_val)
+        ead_val = calculate_non_funded_ead(
+            amt_liability,
+            margin_kept,
+            ccf_val,
+        )
         input_fields["EAD"].value = f"{ead_val:.2f}"
 
         input_fields["Overdue Period in Days"].update()
@@ -185,8 +183,14 @@ def get_non_funded_ac_profile_form(page: ft.Page):
             )
         else:
             input_fields[label_name] = ft.TextField(
-                label=label_name,
-                keyboard_type=ft.KeyboardType.NUMBER if label_name in ["Account Limit", "Amount of Liability", "Margin Kept"] else ft.KeyboardType.TEXT,
+                label="Outstanding" if label_name == "Amount of Liability" else label_name,
+                keyboard_type=ft.KeyboardType.NUMBER if label_name in [
+                    "Account Limit",
+                    "Amount of Liability",
+                    "Margin Kept",
+                    "PV of Collateral",
+                    "Loss Given Default (LGD)",
+                ] else ft.KeyboardType.TEXT,
                 **base_field_style
             )
 
@@ -232,6 +236,12 @@ def get_non_funded_ac_profile_form(page: ft.Page):
         input_fields["Staging by DPD"].value = str(data.get("staging_by_dpd") or "Stage-1")
         input_fields["SICR/Impairment"].value = str(data.get("sicr_impairment") or "None")
         input_fields["SICR/Impairment Reason"].value = str(data.get("qj_reason") or "")
+        input_fields["PV of Collateral"].value = (
+            f"{float(data.get('pv_collateral') or 0):.4f}"
+        )
+        input_fields["Loss Given Default (LGD)"].value = (
+            f"{float(data.get('lgd') or 0):.4f}"
+        )
 
         if data.get("issue_date"):
             nf_issue_datepicker.set_date_from_string(data["issue_date"])
@@ -367,7 +377,7 @@ def get_non_funded_ac_profile_form(page: ft.Page):
 
         payload = {
             "ac_num": ac_num,
-            "reporting_date": last_month_end.strftime("%Y-%m-%d"),
+            "reporting_date": reporting_date.strftime("%Y-%m-%d"),
             "cust_num": input_fields["Customer Number"].value.strip() if input_fields["Customer Number"].value else "",
             "cust_name": input_fields["Customer Name"].value.strip() if input_fields["Customer Name"].value else "",
             "cont_type": input_fields["Cont. Liability Type"].value or "",
@@ -382,7 +392,9 @@ def get_non_funded_ac_profile_form(page: ft.Page):
             "staging_by_dpd": input_fields["Staging by DPD"].value or "Stage-1",
             "sicr_impairment": input_fields["SICR/Impairment"].value or "None",
             "qj_stage": input_fields["QJ Stage"].value or "",
-            "qj_reason": input_fields["SICR/Impairment Reason"].value.strip() if input_fields["SICR/Impairment Reason"].value else ""
+            "qj_reason": input_fields["SICR/Impairment Reason"].value.strip() if input_fields["SICR/Impairment Reason"].value else "",
+            "pv_collateral": parse_flt(input_fields["PV of Collateral"].value),
+            "lgd": parse_flt(input_fields["Loss Given Default (LGD)"].value)
         }
 
         try:

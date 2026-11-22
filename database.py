@@ -1,4 +1,5 @@
 import mysql.connector
+from components.reporting_dates import is_valid_reporting_date, parse_reporting_date
 
 # ==========================================
 # 1. MYSQL DATABASE CONFIGURATION
@@ -21,6 +22,7 @@ local_credit_ratings_db = {}
 local_funded_ac_db = {}
 local_non_funded_ac_db = {}
 local_ccf_db = {}
+app_settings = {}
 
 def get_db_connection():
     """Establishes and returns a connection to MySQL."""
@@ -47,6 +49,37 @@ def init_db():
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS adjusted_pd_results (
+                year VARCHAR(10) NOT NULL,
+                facility_type VARCHAR(50) NOT NULL,
+                pd_stage VARCHAR(20) NOT NULL,
+                historical_pd DECIMAL(15, 8),
+                adjusted_pd DECIMAL(15, 8) NOT NULL,
+                model_n INT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (year, facility_type, pd_stage)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS historical_pd_results (
+                range_start INT NOT NULL,
+                range_end INT NOT NULL,
+                facility_filter VARCHAR(50) NOT NULL,
+                year_label VARCHAR(20) NOT NULL,
+                facility_type VARCHAR(50) NOT NULL,
+                pd_stage VARCHAR(20) NOT NULL,
+                pd_source VARCHAR(100) NOT NULL,
+                pd_value DECIMAL(15, 8) NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (
+                    range_start, range_end, facility_filter, year_label,
+                    facility_type, pd_stage, pd_source
+                )
+            )
+        ''')
+
         # Discounting Factor Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS discounting_factors (
@@ -54,6 +87,34 @@ def init_db():
                 factor_val DECIMAL(10, 4) DEFAULT 0.0000,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 CONSTRAINT single_row CHECK (id = 1)
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS app_settings (
+                setting_key VARCHAR(100) PRIMARY KEY,
+                setting_value VARCHAR(255),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dropdown_option_sets (
+                dropdown_key VARCHAR(150) PRIMARY KEY,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dropdown_options (
+                dropdown_key VARCHAR(150) NOT NULL,
+                item_value VARCHAR(255) NOT NULL,
+                sort_order INT NOT NULL,
+                PRIMARY KEY (dropdown_key, item_value),
+                CONSTRAINT fk_dropdown_options_set
+                    FOREIGN KEY (dropdown_key)
+                    REFERENCES dropdown_option_sets(dropdown_key)
+                    ON DELETE CASCADE
             )
         ''')
 
@@ -207,6 +268,10 @@ def init_db():
             cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN qj_stage VARCHAR(50) AFTER sicr_impairment")
         if "qj_reason" not in funded_existing_cols:
             cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN qj_reason TEXT AFTER qj_stage")
+        if "pv_collateral" not in funded_existing_cols:
+            cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN pv_collateral DECIMAL(15, 4) DEFAULT 0.0000 AFTER qj_reason")
+        if "lgd" not in funded_existing_cols:
+            cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN lgd DECIMAL(15, 4) DEFAULT 0.0000 AFTER pv_collateral")
 
 # Funded A/C Profiles Table
         cursor.execute('''
@@ -237,6 +302,9 @@ def init_db():
                 sicr_impairment VARCHAR(50),
                 qj_stage VARCHAR(50),
                 qj_reason TEXT,
+                pv_collateral DECIMAL(15, 4) DEFAULT 0.0000,
+                lgd DECIMAL(15, 4) DEFAULT 0.0000,
+                ecl_amount DECIMAL(15, 2) DEFAULT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         ''')
@@ -261,6 +329,9 @@ def init_db():
                 sicr_impairment VARCHAR(50),
                 qj_stage VARCHAR(50),
                 qj_reason TEXT,
+                pv_collateral DECIMAL(15, 4) DEFAULT 0.0000,
+                lgd DECIMAL(15, 4) DEFAULT 0.0000,
+                ecl_amount DECIMAL(15, 2) DEFAULT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         ''')
@@ -296,6 +367,12 @@ def init_db():
             cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN overdue_amt DECIMAL(15, 2) DEFAULT 0.00 AFTER overdue_in_days")
         if "ead" not in funded_existing_cols:
             cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN ead DECIMAL(15, 2) DEFAULT 0.00 AFTER ecl_category")
+        if "pv_collateral" not in funded_existing_cols:
+            cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN pv_collateral DECIMAL(15, 4) DEFAULT 0.0000 AFTER qj_reason")
+        if "lgd" not in funded_existing_cols:
+            cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN lgd DECIMAL(15, 4) DEFAULT 0.0000 AFTER pv_collateral")
+        if "ecl_amount" not in funded_existing_cols:
+            cursor.execute("ALTER TABLE funded_ac_profiles ADD COLUMN ecl_amount DECIMAL(15, 2) DEFAULT NULL AFTER lgd")
 
         cursor.execute("SHOW COLUMNS FROM non_funded_ac_profiles")
         nf_existing_cols = [col[0] for col in cursor.fetchall()]
@@ -314,6 +391,12 @@ def init_db():
             cursor.execute("ALTER TABLE non_funded_ac_profiles ADD COLUMN qj_stage VARCHAR(50) AFTER sicr_impairment")
         if "qj_reason" not in nf_existing_cols:
             cursor.execute("ALTER TABLE non_funded_ac_profiles ADD COLUMN qj_reason TEXT AFTER qj_stage")
+        if "pv_collateral" not in nf_existing_cols:
+            cursor.execute("ALTER TABLE non_funded_ac_profiles ADD COLUMN pv_collateral DECIMAL(15, 4) DEFAULT 0.0000 AFTER qj_reason")
+        if "lgd" not in nf_existing_cols:
+            cursor.execute("ALTER TABLE non_funded_ac_profiles ADD COLUMN lgd DECIMAL(15, 4) DEFAULT 0.0000 AFTER pv_collateral")
+        if "ecl_amount" not in nf_existing_cols:
+            cursor.execute("ALTER TABLE non_funded_ac_profiles ADD COLUMN ecl_amount DECIMAL(15, 2) DEFAULT NULL AFTER lgd")
 
         conn.commit()
         cursor.close()
@@ -435,6 +518,102 @@ def get_all_economic_variables():
     except Exception:
         return {}
 
+def save_adjusted_pd_results(records):
+    valid_records = [
+        record for record in records
+        if record.get("adjusted_pd") is not None
+    ]
+    if not valid_records:
+        raise ValueError("No valid Adjusted PD results are available to save.")
+
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM adjusted_pd_results")
+        cursor.executemany(
+            """
+            INSERT INTO adjusted_pd_results (
+                year, facility_type, pd_stage, historical_pd, adjusted_pd, model_n
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            [
+                (
+                    str(record["year"]).strip(),
+                    str(record["facility_type"]).strip(),
+                    str(record["pd_stage"]).strip(),
+                    record["historical_pd"],
+                    record["adjusted_pd"],
+                    int(record["model_n"]),
+                )
+                for record in valid_records
+            ],
+        )
+        conn.commit()
+        return len(valid_records)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
+
+def save_historical_pd_results(
+    records,
+    range_start,
+    range_end,
+    facility_filter,
+):
+    if not records:
+        raise ValueError("No Historical PD results are available to save.")
+
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            DELETE FROM historical_pd_results
+            WHERE range_start = %s AND range_end = %s AND facility_filter = %s
+            """,
+            (range_start, range_end, str(facility_filter).strip()),
+        )
+        cursor.executemany(
+            """
+            INSERT INTO historical_pd_results (
+                range_start, range_end, facility_filter, year_label,
+                facility_type, pd_stage, pd_source, pd_value
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            [
+                (
+                    range_start,
+                    range_end,
+                    str(facility_filter).strip(),
+                    str(record["year_label"]).strip(),
+                    str(record["facility_type"]).strip(),
+                    str(record["stage"]).strip(),
+                    str(record["pd_source"]).strip(),
+                    record["pd_value"],
+                )
+                for record in records
+            ],
+        )
+        conn.commit()
+        return len(records)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
+
 def get_economic_variables_by_year(year):
     try:
         conn = get_db_connection()
@@ -496,6 +675,125 @@ def get_discounting_factor():
         return None
 
 # ==========================================
+# APP SETTINGS CRUD
+# ==========================================
+
+def save_reporting_date(reporting_date):
+    parsed_date = parse_reporting_date(reporting_date)
+    if not is_valid_reporting_date(parsed_date):
+        raise ValueError(
+            "Reporting Date must be a month-end date on or before today."
+        )
+
+    normalized_date = parsed_date.isoformat()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            '''
+            INSERT INTO app_settings (setting_key, setting_value)
+            VALUES ('reporting_date', %s)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+            ''',
+            (normalized_date,),
+        )
+        conn.commit()
+        app_settings["reporting_date"] = normalized_date
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_reporting_date():
+    if app_settings.get("reporting_date"):
+        return app_settings["reporting_date"]
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'reporting_date'"
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if result and result["setting_value"]:
+            app_settings["reporting_date"] = str(result["setting_value"])
+            return app_settings["reporting_date"]
+    except Exception:
+        pass
+    return None
+
+def get_dropdown_options(dropdown_key, default_options):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT 1 FROM dropdown_option_sets WHERE dropdown_key = %s",
+            (dropdown_key,),
+        )
+        if cursor.fetchone() is None:
+            return list(default_options)
+
+        cursor.execute(
+            """
+            SELECT item_value
+            FROM dropdown_options
+            WHERE dropdown_key = %s
+            ORDER BY sort_order, item_value
+            """,
+            (dropdown_key,),
+        )
+        return [row[0] for row in cursor.fetchall()]
+    finally:
+        cursor.close()
+        conn.close()
+
+def replace_dropdown_options(dropdown_key, options):
+    normalized_options = []
+    seen_options = set()
+    for option in options:
+        value = str(option).strip()
+        normalized = value.casefold()
+        if not value:
+            raise ValueError("Dropdown options cannot be empty.")
+        if normalized in seen_options:
+            raise ValueError("Dropdown options cannot contain duplicates.")
+        seen_options.add(normalized)
+        normalized_options.append(value)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT IGNORE INTO dropdown_option_sets (dropdown_key) VALUES (%s)",
+            (dropdown_key,),
+        )
+        cursor.execute(
+            "DELETE FROM dropdown_options WHERE dropdown_key = %s",
+            (dropdown_key,),
+        )
+        if normalized_options:
+            cursor.executemany(
+                """
+                INSERT INTO dropdown_options (dropdown_key, item_value, sort_order)
+                VALUES (%s, %s, %s)
+                """,
+                [
+                    (dropdown_key, option, index)
+                    for index, option in enumerate(normalized_options)
+                ],
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+# ==========================================
 # 7. CREDIT CONVERSION FACTORS CRUD
 # ==========================================
 
@@ -550,44 +848,83 @@ def delete_credit_conversion_factor(year, facility_type):
 # 8. STAGE MIGRATION RATE CRUD
 # ==========================================
 
+def _ensure_stage_migration_schema(cursor):
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stage_migration_rates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            year VARCHAR(10) NOT NULL,
+            facility_type VARCHAR(50) NOT NULL DEFAULT '',
+            month VARCHAR(10) NOT NULL DEFAULT '',
+            migrated_from VARCHAR(50) NOT NULL,
+            migrated_to VARCHAR(50) NOT NULL DEFAULT '',
+            num_migrated INT DEFAULT 0,
+            total_ac_stage INT DEFAULT 0,
+            migration_rate DECIMAL(10, 4) DEFAULT 0.0000,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_year_facility_from_to (year, facility_type, migrated_from, migrated_to)
+        )
+    ''')
+
+    cursor.execute("SHOW COLUMNS FROM stage_migration_rates")
+    existing_columns = {column[0] for column in cursor.fetchall()}
+    if "facility_type" not in existing_columns:
+        cursor.execute("ALTER TABLE stage_migration_rates ADD COLUMN facility_type VARCHAR(50) NOT NULL DEFAULT '' AFTER year")
+    if "month" not in existing_columns:
+        cursor.execute("ALTER TABLE stage_migration_rates ADD COLUMN month VARCHAR(10) NOT NULL DEFAULT '' AFTER year")
+    if "migrated_to" not in existing_columns:
+        cursor.execute("ALTER TABLE stage_migration_rates ADD COLUMN migrated_to VARCHAR(50) NOT NULL DEFAULT '' AFTER migrated_from")
+
+    cursor.execute("SHOW INDEX FROM stage_migration_rates")
+    existing_indexes = {index[2] for index in cursor.fetchall()}
+
+    if "unique_year_facility_from_to" not in existing_indexes:
+        cursor.execute('''
+            SELECT id, year, facility_type, month, migrated_from, migrated_to
+            FROM stage_migration_rates
+            ORDER BY year ASC, facility_type ASC, migrated_from ASC, migrated_to ASC, CAST(month AS UNSIGNED) DESC, id DESC
+        ''')
+        seen_paths = set()
+        duplicate_ids = []
+        for record_id, year, facility_type, month, migrated_from, migrated_to in cursor.fetchall():
+            path = (
+                str(year).strip(),
+                str(facility_type or "").strip(),
+                str(migrated_from).strip(),
+                str(migrated_to).strip()
+            )
+            if path in seen_paths:
+                duplicate_ids.append(record_id)
+            else:
+                seen_paths.add(path)
+
+        if duplicate_ids:
+            placeholders = ", ".join(["%s"] * len(duplicate_ids))
+            cursor.execute(
+                f"DELETE FROM stage_migration_rates WHERE id IN ({placeholders})",
+                tuple(duplicate_ids)
+            )
+
+    if "unique_year_migrated_from" in existing_indexes:
+        cursor.execute("ALTER TABLE stage_migration_rates DROP INDEX unique_year_migrated_from")
+    if "unique_year_month_from_to" in existing_indexes:
+        cursor.execute("ALTER TABLE stage_migration_rates DROP INDEX unique_year_month_from_to")
+    if "unique_year_from_to" in existing_indexes:
+        cursor.execute("ALTER TABLE stage_migration_rates DROP INDEX unique_year_from_to")
+    if "unique_year_facility_from_to" not in existing_indexes:
+        cursor.execute("ALTER TABLE stage_migration_rates ADD UNIQUE KEY unique_year_facility_from_to (year, facility_type, migrated_from, migrated_to)")
+
+
 def save_stage_migration_rate(data_dict):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS stage_migration_rates (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                year VARCHAR(10) NOT NULL,
-                month VARCHAR(10) NOT NULL DEFAULT '',
-                migrated_from VARCHAR(50) NOT NULL,
-                migrated_to VARCHAR(50) NOT NULL DEFAULT '',
-                num_migrated INT DEFAULT 0,
-                total_ac_stage INT DEFAULT 0,
-                migration_rate DECIMAL(10, 4) DEFAULT 0.0000,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY unique_year_month_from_to (year, month, migrated_from, migrated_to)
-            )
-        ''')
-
-        cursor.execute("SHOW COLUMNS FROM stage_migration_rates")
-        existing_columns = {column[0] for column in cursor.fetchall()}
-        if "month" not in existing_columns:
-            cursor.execute("ALTER TABLE stage_migration_rates ADD COLUMN month VARCHAR(10) NOT NULL DEFAULT '' AFTER year")
-        if "migrated_to" not in existing_columns:
-            cursor.execute("ALTER TABLE stage_migration_rates ADD COLUMN migrated_to VARCHAR(50) NOT NULL DEFAULT '' AFTER migrated_from")
-
-        cursor.execute("SHOW INDEX FROM stage_migration_rates")
-        existing_indexes = {index[2] for index in cursor.fetchall()}
-        if "unique_year_migrated_from" in existing_indexes:
-            cursor.execute("ALTER TABLE stage_migration_rates DROP INDEX unique_year_migrated_from")
-        if "unique_year_month_from_to" not in existing_indexes:
-            cursor.execute("ALTER TABLE stage_migration_rates ADD UNIQUE KEY unique_year_month_from_to (year, month, migrated_from, migrated_to)")
+        _ensure_stage_migration_schema(cursor)
         
         if data_dict.get("id") is not None:
             query = '''
                 UPDATE stage_migration_rates
                 SET year = %(year)s,
-                    month = %(month)s,
+                    facility_type = %(facility_type)s,
                     migrated_from = %(migrated_from)s,
                     migrated_to = %(migrated_to)s,
                     num_migrated = %(num_migrated)s,
@@ -598,9 +935,9 @@ def save_stage_migration_rate(data_dict):
         else:
             query = '''
                 INSERT INTO stage_migration_rates (
-                    year, month, migrated_from, migrated_to, num_migrated, total_ac_stage, migration_rate
+                    year, facility_type, migrated_from, migrated_to, num_migrated, total_ac_stage, migration_rate
                 ) VALUES (
-                    %(year)s, %(month)s, %(migrated_from)s, %(migrated_to)s, %(num_migrated)s, %(total_ac_stage)s, %(migration_rate)s
+                    %(year)s, %(facility_type)s, %(migrated_from)s, %(migrated_to)s, %(num_migrated)s, %(total_ac_stage)s, %(migration_rate)s
                 ) ON DUPLICATE KEY UPDATE
                     num_migrated = VALUES(num_migrated),
                     total_ac_stage = VALUES(total_ac_stage),
@@ -616,22 +953,27 @@ def save_stage_migration_rate(data_dict):
 def get_all_stage_migration_rates():
     try:
         conn = get_db_connection()
+        migration_cursor = conn.cursor()
+        _ensure_stage_migration_schema(migration_cursor)
+        conn.commit()
+        migration_cursor.close()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM stage_migration_rates ORDER BY year DESC, month DESC, migrated_from ASC, migrated_to ASC")
+        cursor.execute("SELECT * FROM stage_migration_rates ORDER BY year DESC, facility_type ASC, migrated_from ASC, migrated_to ASC")
         results = cursor.fetchall()
         cursor.close()
         conn.close()
         return results
     except Exception:
-        return []
+        raise
 
-def delete_stage_migration_rate(year, month, migrated_from, migrated_to):
+def delete_stage_migration_rate(year, facility_type, migrated_from, migrated_to):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        _ensure_stage_migration_schema(cursor)
         cursor.execute(
-            "DELETE FROM stage_migration_rates WHERE TRIM(year) = %s AND TRIM(month) = %s AND TRIM(migrated_from) = %s AND TRIM(migrated_to) = %s",
-            (str(year).strip(), str(month).strip(), str(migrated_from).strip(), str(migrated_to).strip())
+            "DELETE FROM stage_migration_rates WHERE TRIM(year) = %s AND TRIM(facility_type) = %s AND TRIM(migrated_from) = %s AND TRIM(migrated_to) = %s",
+            (str(year).strip(), str(facility_type).strip(), str(migrated_from).strip(), str(migrated_to).strip())
         )
         conn.commit()
         cursor.close()
@@ -1036,14 +1378,14 @@ def save_funded_ac_profile(data_dict):
                 accrued_int, calc_int, exp_date, first_inst_due,
                 due_install, install_size, amt_recovered, install_recovered,
                 overdue_install, overdue_in_days, overdue_amt, ecl_category, ead,
-                staging_by_dpd, sicr_impairment, qj_stage, qj_reason
+                staging_by_dpd, sicr_impairment, qj_stage, qj_reason, pv_collateral, lgd
             ) VALUES (
                 %(ac_num)s, %(reporting_date)s, %(cust_num)s, %(cust_name)s, %(nature)s,
                 %(approval_type)s, %(approval_date)s, %(loan_limit)s, %(loan_out)s,
                 %(accrued_int)s, %(calc_int)s, %(exp_date)s, %(first_inst_due)s,
                 %(due_install)s, %(install_size)s, %(amt_recovered)s, %(install_recovered)s,
                 %(overdue_install)s, %(overdue_in_days)s, %(overdue_amt)s, %(ecl_category)s, %(ead)s,
-                %(staging_by_dpd)s, %(sicr_impairment)s, %(qj_stage)s, %(qj_reason)s
+                %(staging_by_dpd)s, %(sicr_impairment)s, %(qj_stage)s, %(qj_reason)s, %(pv_collateral)s, %(lgd)s
             ) ON DUPLICATE KEY UPDATE
                 reporting_date = VALUES(reporting_date),
                 cust_num = VALUES(cust_num),
@@ -1069,7 +1411,9 @@ def save_funded_ac_profile(data_dict):
                 staging_by_dpd = VALUES(staging_by_dpd),
                 sicr_impairment = VALUES(sicr_impairment),
                 qj_stage = VALUES(qj_stage),
-                qj_reason = VALUES(qj_reason)
+                qj_reason = VALUES(qj_reason),
+                pv_collateral = VALUES(pv_collateral),
+                lgd = VALUES(lgd)
         '''
         cursor.execute(query, data_dict)
         conn.commit()
@@ -1113,11 +1457,13 @@ def save_non_funded_ac_profile(data_dict):
             INSERT INTO non_funded_ac_profiles (
                 ac_num, reporting_date, cust_num, cust_name, cont_type,
                 amt_liability, issue_date, exp_date, overdue_days, margin_kept,
-                ac_limit, ccf, ead, staging_by_dpd, sicr_impairment, qj_stage, qj_reason
+                ac_limit, ccf, ead, staging_by_dpd, sicr_impairment, qj_stage, qj_reason,
+                pv_collateral, lgd
             ) VALUES (
                 %(ac_num)s, %(reporting_date)s, %(cust_num)s, %(cust_name)s, %(cont_type)s,
                 %(amt_liability)s, %(issue_date)s, %(exp_date)s, %(overdue_days)s, %(margin_kept)s,
-                %(ac_limit)s, %(ccf)s, %(ead)s, %(staging_by_dpd)s, %(sicr_impairment)s, %(qj_stage)s, %(qj_reason)s
+                %(ac_limit)s, %(ccf)s, %(ead)s, %(staging_by_dpd)s, %(sicr_impairment)s,
+                %(qj_stage)s, %(qj_reason)s, %(pv_collateral)s, %(lgd)s
             ) ON DUPLICATE KEY UPDATE
                 reporting_date = VALUES(reporting_date),
                 cust_num = VALUES(cust_num),
@@ -1134,7 +1480,9 @@ def save_non_funded_ac_profile(data_dict):
                 staging_by_dpd = VALUES(staging_by_dpd),
                 sicr_impairment = VALUES(sicr_impairment),
                 qj_stage = VALUES(qj_stage),
-                qj_reason = VALUES(qj_reason)
+                qj_reason = VALUES(qj_reason),
+                pv_collateral = VALUES(pv_collateral),
+                lgd = VALUES(lgd)
         '''
         cursor.execute(query, data_dict)
         conn.commit()
@@ -1154,6 +1502,277 @@ def get_all_non_funded_ac_profiles():
         return {str(row["ac_num"]).strip(): row for row in results}
     except Exception:
         return {}
+
+def save_calculated_ead(funded_ead, non_funded_ead, on_progress=None):
+    funded_updates = [
+        (float(ead), str(account_number).strip())
+        for account_number, ead in funded_ead.items()
+    ]
+    non_funded_updates = [
+        (float(ead), str(account_number).strip())
+        for account_number, ead in non_funded_ead.items()
+    ]
+    if any(not account_number for _, account_number in funded_updates + non_funded_updates):
+        raise ValueError("Account numbers are required to save calculated EAD.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        total_updates = len(funded_updates) + len(non_funded_updates)
+        completed_updates = 0
+        for ead, account_number in funded_updates:
+            cursor.execute(
+                "UPDATE funded_ac_profiles SET ead = %s WHERE ac_num = %s",
+                (ead, account_number),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        for ead, account_number in non_funded_updates:
+            cursor.execute(
+                "UPDATE non_funded_ac_profiles SET ead = %s WHERE ac_num = %s",
+                (ead, account_number),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_ead_recalculation_data():
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT ac_num, nature, loan_limit, loan_out, accrued_int, calc_int, ead
+            FROM funded_ac_profiles
+            ORDER BY ac_num
+            """
+        )
+        funded_accounts = cursor.fetchall()
+        cursor.execute(
+            """
+            SELECT ac_num, cont_type, amt_liability, margin_kept, ead
+            FROM non_funded_ac_profiles
+            ORDER BY ac_num
+            """
+        )
+        non_funded_accounts = cursor.fetchall()
+        cursor.execute("SELECT facility_type, cc_rate FROM credit_conversion_factors")
+        ccf_records = cursor.fetchall()
+        return funded_accounts, non_funded_accounts, ccf_records
+    finally:
+        if cursor is not None:
+            cursor.close()
+        conn.close()
+
+def get_collateral_distribution_data():
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, customer_number, lgd FROM collateral_profiles"
+        )
+        collateral_records = cursor.fetchall()
+        cursor.execute(
+            "SELECT ac_num, cust_num, cust_name, ead FROM funded_ac_profiles"
+        )
+        funded_accounts = cursor.fetchall()
+        cursor.execute(
+            "SELECT ac_num, cust_num, cust_name, ead FROM non_funded_ac_profiles"
+        )
+        non_funded_accounts = cursor.fetchall()
+        return collateral_records, funded_accounts, non_funded_accounts
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
+
+def get_lgd_calculation_data():
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT ac_num, cust_num, cust_name, ead, pv_collateral "
+            "FROM funded_ac_profiles"
+        )
+        funded_accounts = cursor.fetchall()
+        cursor.execute(
+            "SELECT ac_num, cust_num, cust_name, ead, pv_collateral "
+            "FROM non_funded_ac_profiles"
+        )
+        non_funded_accounts = cursor.fetchall()
+        return funded_accounts, non_funded_accounts
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
+
+def get_ecl_calculation_data():
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        _ensure_stage_migration_schema(cursor)
+        conn.commit()
+        cursor.close()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT ac_num, cust_num, cust_name, nature, loan_out, ead, lgd, ecl_amount, "
+            "staging_by_dpd, qj_stage FROM funded_ac_profiles"
+        )
+        funded_accounts = cursor.fetchall()
+        cursor.execute(
+            "SELECT ac_num, cust_num, cust_name, cont_type, amt_liability, ead, lgd, ecl_amount, "
+            "staging_by_dpd, qj_stage FROM non_funded_ac_profiles"
+        )
+        non_funded_accounts = cursor.fetchall()
+        cursor.execute(
+            "SELECT year, variable_name, value FROM economic_variables"
+        )
+        economic_data = {}
+        for record in cursor.fetchall():
+            year = str(record["year"]).strip()
+            variable_name = str(record["variable_name"]).strip()
+            economic_data.setdefault(year, {})[variable_name] = (
+                str(record["value"]) if record["value"] is not None else ""
+            )
+        cursor.execute(
+            "SELECT year, facility_type, migrated_from, migrated_to, migration_rate "
+            "FROM stage_migration_rates"
+        )
+        migration_data = cursor.fetchall()
+        return (
+            funded_accounts,
+            non_funded_accounts,
+            economic_data,
+            migration_data,
+        )
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
+
+def save_ecl_calculations(funded_ecl, non_funded_ecl, on_progress=None):
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        total_updates = len(funded_ecl) + len(non_funded_ecl)
+        completed_updates = 0
+        for account_number, ecl_amount in funded_ecl.items():
+            cursor.execute(
+                "UPDATE funded_ac_profiles SET ecl_amount = %s WHERE TRIM(ac_num) = %s",
+                (ecl_amount, str(account_number).strip()),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        for account_number, ecl_amount in non_funded_ecl.items():
+            cursor.execute(
+                "UPDATE non_funded_ac_profiles SET ecl_amount = %s WHERE TRIM(ac_num) = %s",
+                (ecl_amount, str(account_number).strip()),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
+
+def save_collateral_distributions(
+    funded_allocations,
+    non_funded_allocations,
+    on_progress=None,
+):
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        total_updates = len(funded_allocations) + len(non_funded_allocations)
+        completed_updates = 0
+        for account_number, allocation in funded_allocations.items():
+            cursor.execute(
+                "UPDATE funded_ac_profiles SET pv_collateral = %s WHERE TRIM(ac_num) = %s",
+                (allocation, str(account_number).strip()),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        for account_number, allocation in non_funded_allocations.items():
+            cursor.execute(
+                "UPDATE non_funded_ac_profiles SET pv_collateral = %s WHERE TRIM(ac_num) = %s",
+                (allocation, str(account_number).strip()),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
+
+def save_lgd_calculations(funded_lgd, non_funded_lgd, on_progress=None):
+    conn = get_db_connection()
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        total_updates = len(funded_lgd) + len(non_funded_lgd)
+        completed_updates = 0
+        for account_number, lgd in funded_lgd.items():
+            cursor.execute(
+                "UPDATE funded_ac_profiles SET lgd = %s WHERE TRIM(ac_num) = %s",
+                (lgd, str(account_number).strip()),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        for account_number, lgd in non_funded_lgd.items():
+            cursor.execute(
+                "UPDATE non_funded_ac_profiles SET lgd = %s WHERE TRIM(ac_num) = %s",
+                (lgd, str(account_number).strip()),
+            )
+            completed_updates += 1
+            if on_progress is not None:
+                on_progress(completed_updates, total_updates)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
 
 def delete_non_funded_ac_profile_by_id(ac_num):
     try:

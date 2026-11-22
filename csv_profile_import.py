@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Callable
 
+from components.reporting_dates import is_valid_reporting_date, parse_reporting_date
 from database import (
     save_collateral_profile,
     save_corporate_profile,
@@ -98,8 +99,10 @@ PROFILE_IMPORT_SPECS = {
             "loan_limit", "loan_out", "accrued_int", "calc_int",
             "due_install", "install_size", "amt_recovered",
             "install_recovered", "overdue_install", "overdue_amt", "ead",
+            "pv_collateral", "lgd",
         ),
         ("overdue_in_days",),
+        optional_headers=("pv_collateral", "lgd"),
     ),
     "non_funded_ac": ProfileImportSpec(
         "Non-Funded A/C Profile",
@@ -110,8 +113,12 @@ PROFILE_IMPORT_SPECS = {
             "margin_kept", "ac_limit", "ccf", "ead", "staging_by_dpd",
             "sicr_impairment", "qj_stage", "qj_reason",
         ),
-        ("amt_liability", "margin_kept", "ac_limit", "ead"),
+        (
+            "amt_liability", "margin_kept", "ac_limit", "ead",
+            "pv_collateral", "lgd",
+        ),
         ("overdue_days",),
+        optional_headers=("pv_collateral", "lgd"),
     ),
 }
 
@@ -189,8 +196,17 @@ def parse_profile_csv(profile_type, content):
         if not record.get(required_key):
             raise ProfileImportError(f"CSV row {row_number} is missing {required_key}.")
 
+        if "reporting_date" in record:
+            reporting_date = parse_reporting_date(record["reporting_date"])
+            if not is_valid_reporting_date(reporting_date):
+                raise ProfileImportError(
+                    f"CSV row {row_number} has an invalid reporting_date. "
+                    "It must be a month-end date on or before today."
+                )
+            record["reporting_date"] = reporting_date.isoformat()
+
         for field in numeric_fields | integer_fields:
-            raw_value = record[field]
+            raw_value = record.get(field, "")
             if not raw_value:
                 record[field] = 0 if field in integer_fields else Decimal(0)
                 continue

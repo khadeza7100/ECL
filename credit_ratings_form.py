@@ -1,6 +1,10 @@
 import flet as ft
 from datetime import date
 from components.custom_datepicker import CustomDatePicker
+from components.dropdown_configuration import (
+    get_configured_dropdown_options,
+    get_configured_year_options,
+)
 from database import (
     save_credit_ratings_profile,
     get_all_credit_ratings_profiles,
@@ -29,8 +33,18 @@ def get_credit_ratings_form(page: ft.Page):
 
     # 2. Options Definitions
     current_year = str(date.today().year)
-    year_options = [str(y) for y in range(2020, int(current_year) + 1)]
-    rating_options = ["Excellent", "Good", "Marginal", "Unacceptable"]
+    year_options = get_configured_year_options(
+        str(record.get(field) or "").strip()
+        for record in full_db_cache.values()
+        for field in ("year_financials", "icrrs_year", "rating_year", "scoring_year")
+    )
+    year_options.reverse()
+    default_year = (
+        current_year
+        if current_year in year_options
+        else (year_options[0] if year_options else None)
+    )
+    rating_options = get_configured_dropdown_options("credit_rating.value")
     credit_rating_datepicker = CustomDatePicker(
         page, "Credit Rating Date", width=None, height=45
     )
@@ -56,7 +70,7 @@ def get_credit_ratings_form(page: ft.Page):
         "Year of Financials": year_options,
         "ICRRS Rating": rating_options,
         "ICRRS Rating Year": year_options,
-        "Credit Rating Company": ["Alpha Rating", "CRAB", "CRISL", "Mega"],
+        "Credit Rating Company": get_configured_dropdown_options("credit_rating.company"),
         "Credit Scoring": rating_options,
         "Credit Scoring Year": year_options
     }
@@ -92,7 +106,7 @@ def get_credit_ratings_form(page: ft.Page):
             tf = ft.Dropdown(
                 label=label_name,
                 options=[ft.dropdown.Option(opt) for opt in dropdown_options[label_name]],
-                value=current_year if "Year" in label_name else None,
+                value=default_year if "Year" in label_name else None,
                 **base_field_style
             )
         elif label_name == "Credit Rating Date":
@@ -157,7 +171,7 @@ def get_credit_ratings_form(page: ft.Page):
 
     def clear_form_fields():
         for label_name, tf in input_fields.items():
-            tf.value = current_year if "Year" in label_name else ""
+            tf.value = default_year if "Year" in label_name else ""
         credit_rating_datepicker.clear()
         credit_rating_expiry_datepicker.clear()
         page.update()
@@ -259,15 +273,14 @@ def get_credit_ratings_form(page: ft.Page):
             page.update()
             return
 
-        future_year_fields = [
+        invalid_year_fields = [
             label_name
             for label_name in ("Year of Financials", "ICRRS Rating Year", "Credit Scoring Year")
             if input_fields[label_name].value
-            and input_fields[label_name].value.isdigit()
-            and int(input_fields[label_name].value) > int(current_year)
+            and input_fields[label_name].value not in year_options
         ]
-        if future_year_fields:
-            page.overlay.append(ft.SnackBar(ft.Text("Year cannot be greater than the current year."), bgcolor="#ff9800", open=True))
+        if invalid_year_fields:
+            page.overlay.append(ft.SnackBar(ft.Text("Select a configured Year."), bgcolor="#ff9800", open=True))
             page.update()
             return
 

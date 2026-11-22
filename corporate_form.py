@@ -6,6 +6,7 @@ from database import (
     is_customer_exists_in_table,
     get_customer_name_by_number
 )
+from components.dropdown_configuration import get_configured_dropdown_options
 
 def get_corporate_profile_form(page: ft.Page):
     input_fields = {}
@@ -25,14 +26,14 @@ def get_corporate_profile_form(page: ft.Page):
     full_db_cache = {str(k).strip(): v for k, v in raw_cache.items()}
 
     dropdown_options = {
-        "Legal Entity Type": ["Pvt Ltd", "PLC", "Gov Corp", "Proprietorship", "Partnership"],
-        "Business Type": ["Trading", "Service", "Industry", "Agriculture", "Staff"],
-        "Size of Business": ["Informal", "Cottage", "Micro", "Small", "Medium", "Large"],
-        "Location District": ["Dhaka", "Chittagong", "Sylhet", "Rajshahi", "Khulna", "Barisal"],
-        "Default History": ["Yes", "No"],
-        "Repayment Behavior": ["Satisfactory", "Good", "Moderate", "Bad", "Worst"],
-        "Latest CIB Status": ["STD-0", "STD-1", "STD-2", "SMA", "SS", "DF", "BL", "BLW", "RSDL"],
-        "Major Audit Objections": ["Yes", "No"]
+        "Legal Entity Type": get_configured_dropdown_options("corporate.legal_entity_type"),
+        "Business Type": get_configured_dropdown_options("corporate.business_type"),
+        "Size of Business": get_configured_dropdown_options("corporate.size_of_business"),
+        "Location District": get_configured_dropdown_options("corporate.location_district"),
+        "Default History": get_configured_dropdown_options("corporate.default_history"),
+        "Repayment Behavior": get_configured_dropdown_options("corporate.repayment_behavior"),
+        "Latest CIB Status": get_configured_dropdown_options("corporate.cib_status"),
+        "Major Audit Objections": get_configured_dropdown_options("corporate.audit_objections"),
     }
 
     numeric_fields = ["Fixed Asset Value", "Business Turnover", "Manpower Count"]

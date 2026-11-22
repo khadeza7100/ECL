@@ -1,5 +1,8 @@
-import flet as ft
 from datetime import date
+
+import flet as ft
+
+from components.dropdown_configuration import get_configured_year_options
 from database import (
     save_economic_variables, 
     get_all_economic_variables, 
@@ -24,6 +27,13 @@ def get_economic_variables_form(page: ft.Page):
     raw_cache = get_all_economic_variables() or {}
     full_db_cache = {str(k).strip(): v for k, v in raw_cache.items()}
     current_year = str(date.today().year)
+    year_options = get_configured_year_options(full_db_cache)
+    year_options.reverse()
+    default_year = (
+        current_year
+        if current_year in year_options
+        else (year_options[0] if year_options else None)
+    )
 
     # ৩ কলাম ইনপুট গ্রীড
     grid_rows = []
@@ -35,8 +45,8 @@ def get_economic_variables_form(page: ft.Page):
                 if label_name == "Year":
                     tf = ft.Dropdown(
                         label=label_name,
-                        options=[ft.dropdown.Option(str(year)) for year in range(2020, int(current_year) + 1)],
-                        value=current_year,
+                        options=[ft.dropdown.Option(year) for year in year_options],
+                        value=default_year,
                         height=45,
                         content_padding=ft.Padding(12, 10, 12, 10),
                         border_color="#00e676",
@@ -82,7 +92,7 @@ def get_economic_variables_form(page: ft.Page):
 
     def clear_form_fields():
         for label_name, tf in input_fields.items():
-            tf.value = current_year if label_name == "Year" else ""
+            tf.value = default_year if label_name == "Year" else ""
         page.update()
 
     # সার্চ ফিল্ড (চ্যাপ্টা হওয়া রোধ করতে নির্দিষ্ট height সহ ক্লিন আউটলাইন)
@@ -226,9 +236,9 @@ def get_economic_variables_form(page: ft.Page):
             page.update()
             return
 
-        if selected_year.isdigit() and int(selected_year) > int(current_year):
+        if selected_year not in year_options:
             page.overlay.append(ft.SnackBar(
-                content=ft.Text("Year cannot be greater than the current year."),
+                content=ft.Text("Select a configured Year."),
                 bgcolor="#ff9800", open=True
             ))
             page.update()

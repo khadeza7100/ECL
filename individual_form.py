@@ -7,6 +7,7 @@ from database import (
     get_customer_name_by_number
 )
 from components.custom_datepicker import CustomDatePicker
+from components.dropdown_configuration import get_configured_dropdown_options
 
 def get_individual_profile_form(page: ft.Page):
     input_fields = {}
@@ -26,17 +27,17 @@ def get_individual_profile_form(page: ft.Page):
     full_db_cache = {str(k).strip(): v for k, v in raw_cache.items()}
 
     dropdown_options = {
-        "Legal Entity Type": ["Bangladeshi", "NRB"],
-        "District": ["Dhaka", "Chittagong", "Sylhet", "Rajshahi"],
-        "Gender": ["Male", "Female", "Other"],
-        "Religion": ["Islam", "Hindu", "Christian", "Buddhist"],
-        "Marital Status": ["Married", "Single", "Widow", "Divorced"],
-        "Education": ["PHD", "Mphil", "Masters", "Bachelor", "HSC", "SSC"],
-        "Occupation": ["Business", "Service", "Self-Employed", "Retired"],
-        "Default History": ["Yes", "No"],
-        "Repayment Behavior": ["Satisfactory", "Good", "Moderate", "Bad", "Worst"],
-        "Latest CIB Status": ["STD-0", "STD-1", "STD-2", "SMA", "SS", "DF", "BL", "BLW", "RSDL"],
-        "Major Audit Objections": ["Yes", "No"]
+        "Legal Entity Type": get_configured_dropdown_options("individual.legal_entity_type"),
+        "District": get_configured_dropdown_options("individual.district"),
+        "Gender": get_configured_dropdown_options("individual.gender"),
+        "Religion": get_configured_dropdown_options("individual.religion"),
+        "Marital Status": get_configured_dropdown_options("individual.marital_status"),
+        "Education": get_configured_dropdown_options("individual.education"),
+        "Occupation": get_configured_dropdown_options("individual.occupation"),
+        "Default History": get_configured_dropdown_options("individual.default_history"),
+        "Repayment Behavior": get_configured_dropdown_options("individual.repayment_behavior"),
+        "Latest CIB Status": get_configured_dropdown_options("individual.cib_status"),
+        "Major Audit Objections": get_configured_dropdown_options("individual.audit_objections"),
     }
 
     numeric_fields = [

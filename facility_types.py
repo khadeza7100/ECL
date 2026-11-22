@@ -3,6 +3,8 @@ FUNDED_FACILITY_TYPES = [
     "Continuous Loan",
     "Term Loan",
     "Credit Card",
+    "Consumer Loan",
+    "Staff Loan",
 ]
 
 NON_FUNDED_FACILITY_TYPES = [

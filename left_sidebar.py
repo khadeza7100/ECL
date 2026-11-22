@@ -52,19 +52,29 @@ def get_left_sidebar(page, all_submenu_controls, handle_submenu_click, return_to
             create_sub_item("non_funded_ac", "Non-Funded A/C Profile", lambda e: get_form_action("non_funded_ac"))              
         ], "#00e676"),
 
-        create_menu_section("Global Settings", [
+        create_menu_section("App Settings", [
+            create_sub_item("reporting_date", "Reporting Date", lambda e: get_form_action("reporting_date")),
+            create_sub_item("dropdown_configuration", "Dropdown Configuration", lambda e: get_form_action("dropdown_configuration")),
+        ], "#80d8ff"),
+
+        create_menu_section("ECL Settings", [
             create_sub_item("proxy_data_model", "Proxy Data & Model Selection", lambda e: get_form_action("proxy_data_model")),
             create_sub_item("economic_variables", "Economic Variables", lambda e: get_form_action("economic_variables")),
             create_sub_item("haircut", "Collateral Haircut", lambda e: get_form_action("haircut")),
             create_sub_item("ccf", "Credit Conversion Factor", lambda e: get_form_action("ccf")),
             create_sub_item("discounting_factor", "Discounting Factor", lambda e: get_form_action("discounting_factor")),
             create_sub_item("loan_staging_criteria", "Loan Staging Criteria",lambda e: get_form_action("loan_staging_criteria")), 
-            create_sub_item("calc_smr", "Stage Migration Rate / Role Rate", lambda e: get_form_action("calc_smr")),
+            create_sub_item("calc_smr", "Stage Migration Rate", lambda e: get_form_action("calc_smr")),
             
         ], "#a7ffeb"),
 
         create_menu_section("Expected Credit Loss", [
-            create_sub_item("calc_ecl", "Calculate ECL")
+            create_sub_item("calc_pd", "Historical PD", lambda e: get_form_action("calc_pd")),
+            create_sub_item("adjusted_pd", "Adjusted PD", lambda e: get_form_action("adjusted_pd")),
+            create_sub_item("calculated_ead", "Calculate EAD", lambda e: get_form_action("calculated_ead")),
+            create_sub_item("distribute_collateral", "Distribute Collateral", lambda e: get_form_action("distribute_collateral")),
+            create_sub_item("calculate_lgd", "Calculate LGD", lambda e: get_form_action("calculate_lgd")),
+            create_sub_item("calc_ecl", "Calculate ECL", lambda e: get_form_action("calc_ecl"))
         ], "#1de9b6"),
 
         create_menu_section("Upload CSV", [
@@ -81,7 +91,7 @@ def get_left_sidebar(page, all_submenu_controls, handle_submenu_click, return_to
     return ft.Container(
         content=ft.Column([
             ft.Container(
-                content=ft.Row([ft.Text("📊", size=16), ft.Text("ECL Navigation", size=15, weight="bold", color="white")]), 
+                content=ft.Row([ft.Text("📊", size=16), ft.Text("ECL Calculator", size=18, weight="bold", color="white")]), 
                 on_click=return_to_home_view, 
                 ink=True, 
                 padding=4
